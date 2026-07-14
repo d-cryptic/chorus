@@ -9,6 +9,7 @@ def embed(texts):
     url = os.environ.get("EMBED_URL", "https://api.openai.com/v1/embeddings")
     model = os.environ.get("EMBED_MODEL", "text-embedding-3-small")
     r = urllib.request.Request(url, data=json.dumps({"model": model, "input": texts}).encode(), method="POST")
+    r.add_header("user-agent", "chorus-box/1.0")
     r.add_header("content-type", "application/json"); r.add_header("authorization", "Bearer " + key)
     d = json.loads(urllib.request.urlopen(r, timeout=30).read())
     return [e["embedding"] for e in d["data"]]

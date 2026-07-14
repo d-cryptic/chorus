@@ -8,6 +8,7 @@ DEFAULTS = {"pillar": 0.22, "author": 0.18, "upside": 0.16, "fresh": 0.12,
 
 def _req(url, method="GET", token=None, body=None):
     r = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, method=method)
+    r.add_header("user-agent", "chorus-box/1.0")
     r.add_header("content-type", "application/json")
     if token: r.add_header("authorization", "Bearer " + token)
     with urllib.request.urlopen(r, timeout=25) as resp: return json.loads(resp.read() or "{}")

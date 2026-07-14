@@ -10,6 +10,7 @@ import notify
 def _req(url, method="GET", token=None, body=None, timeout=20):
     data = json.dumps(body).encode() if body is not None else None
     r = urllib.request.Request(url, data=data, method=method)
+    r.add_header("user-agent", "chorus-box/1.0")
     r.add_header("content-type", "application/json")
     if token: r.add_header("authorization", f"Bearer {token}")
     with urllib.request.urlopen(r, timeout=timeout) as resp:

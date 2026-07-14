@@ -57,10 +57,19 @@ schedule.
 `LINKUP_API_KEY`) or `firecrawl` (`FIRECRAWL_API_KEY`). Normalized `[{title,url,content}]`; the
 response mappers are unit-tested. Add a provider = add one class + a PROVIDERS entry.
 
-## Supermemory (self-hosted)
-`mirror_feedback.py`/`onboard.py` default to a **local self-hosted** Supermemory at
-`SUPERMEMORY_BASE_URL` (default `http://localhost:8000`, key optional). Self-host
-`github.com/supermemoryai/supermemory` (docker) on the box.
+## Supermemory / memory (self-hosted)
+`mirror_feedback.py`/`onboard.py`/`enrich.py`/`voice_refine.py` write memory to
+`SUPERMEMORY_BASE_URL` (default `http://localhost:8000`, key optional). The box runs
+**`memory_service.py`** — a tiny Supermemory-API-compatible store (stdlib + SQLite, no
+deps, bound to 127.0.0.1) implementing the `/v3/documents` surface Chorus uses
+(POST store, GET/`?containerTags=` list, DELETE by tag, POST `/v3/search`). Runs as the
+`chorus-memory` systemd unit (`MEMORY_DB=/opt/chorus/memory.db`). Drop-in swap for upstream
+`github.com/supermemoryai/supermemory`: just point `SUPERMEMORY_BASE_URL` at it.
+
+## Cloudflare Bot Fight Mode / User-Agent
+The Worker sits behind Cloudflare, which **403s the default `Python-urllib` User-Agent**.
+Every box→Worker request sets `User-Agent: chorus-box/1.0` so the write path (ingest, spend,
+weights, run-log, feedback) is not silently blocked. Keep the header when adding new callers.
 
 ## notify (swappable — Telegram / WhatsApp / console)
 `notify.py` — `NOTIFY_PROVIDER = telegram | whatsapp | console`. digest.py calls `notify.send()`.

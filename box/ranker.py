@@ -74,6 +74,7 @@ def finalize(pre, angle_strength, weights):
 def _req(url, method="GET", token=None, body=None, timeout=20):
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url, data=data, method=method)
+    req.add_header("user-agent", "chorus-box/1.0")
     req.add_header("content-type", "application/json")
     if token:
         req.add_header("authorization", f"Bearer {token}")
