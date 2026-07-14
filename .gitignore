@@ -29,3 +29,7 @@ box/followers.json
 # box data caches (network dumps — PII, never publish)
 box/*.json
 !box/*.example.json
+.deploy_token
+dashboard/.deploy_token
+infra/cmo-agent/.tunnel_secret
+infra/cmo-agent/.deploy_token
