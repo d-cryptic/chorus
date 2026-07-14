@@ -46,22 +46,37 @@ def route_pre(c, *, pillar_hit, mutuals=()) -> str:
     return CONSIDER
 
 
-def route_post(c, *, angle_strength, pillar_hit, drafts=()) -> tuple[str, str]:
-    """Decide the target using signals we already paid for. -> (route, reason)."""
-    tier = (c.get("author_tier") or "C").upper()
-    a = float(angle_strength or 0.0)
+def route_post(c, *, distinct, pillar_hit, drafts=()) -> tuple[str, str]:
+    """Decide the target. -> (route, reason).
 
-    if a >= QUOTE_TAU and drafts:
-        return QUOTE, f"distinct take (angle {a:.2f} >= {QUOTE_TAU}) — worth its own post"
-    if a <= RT_TAU:
-        # Nothing to add. Amplify only if it is genuinely on-pillar AND the author is
-        # worth amplifying; otherwise this is just noise -> drop.
-        if pillar_hit and tier in VALUE_TIERS:
-            return RETWEET, f"on-pillar, tier {tier}, nothing to add (angle {a:.2f})"
-        return DROP, f"nothing to add (angle {a:.2f}) and not worth amplifying"
+    `distinct` MUST be an INDEPENDENT score (the judge's), never the drafter's own
+    angle_strength. Live calibration showed the drafting model self-reports 0.80-0.85
+    on every draft — it marks its own homework, so routing on it sent 100% of
+    candidates to `quote` and switched off replies entirely.
+
+    Safety default: with no independent evidence (`distinct is None` — judge disabled
+    or unavailable) we REPLY. Reply is Chorus's core purpose and the low-risk action;
+    quote/retweet broadcast to your own followers and must be earned, never assumed.
+    """
     if not drafts:
+        # No body to post. Only a deliberate amplify makes sense here.
+        tier = (c.get("author_tier") or "C").upper()
+        if pillar_hit and tier in VALUE_TIERS and distinct is not None and distinct <= RT_TAU:
+            return RETWEET, f"on-pillar, tier {tier}, nothing to add (distinct {distinct:.2f})"
         return DROP, "no usable draft produced"
-    return REPLY, f"reply (angle {a:.2f})"
+
+    if distinct is None:
+        return REPLY, "reply (no independent distinctness score — defaulting to reply)"
+
+    tier = (c.get("author_tier") or "C").upper()
+    d = float(distinct)
+    if d >= QUOTE_TAU:
+        return QUOTE, f"judge rates take distinct ({d:.2f} >= {QUOTE_TAU}) — worth its own post"
+    if d <= RT_TAU:
+        if pillar_hit and tier in VALUE_TIERS:
+            return RETWEET, f"on-pillar, tier {tier}, nothing to add (distinct {d:.2f})"
+        return DROP, f"nothing to add (distinct {d:.2f}) and not worth amplifying"
+    return REPLY, f"reply (distinct {d:.2f})"
 
 
 class CapState:
@@ -125,8 +140,12 @@ def build_judge_prompt(tweet_text: str, draft: str, voice: str) -> str:
         f"Voice the reply should match: {voice}\n"
         f"<tweet>\n{tweet_text}\n</tweet>\n"
         f"<draft>\n{draft}\n</draft>\n"
-        'Return JSON {"voice_match":0..1, "contract":0..1, "grounded":0..1, "why":str}. '
+        'Return JSON {"voice_match":0..1, "contract":0..1, "grounded":0..1, '
+        '"distinct":0..1, "why":str}. '
         "voice_match: does it sound like that voice? contract: is it a specific, "
         "non-generic reply under 280 chars? grounded: are all claims/numbers supported "
-        "by the tweet or clearly the author's own experience (no invented facts)?"
+        "by the tweet or clearly the author's own experience (no invented facts)? "
+        "distinct: does it add a genuinely NEW point that stands on its own away from "
+        "the tweet (1.0), or is it mostly agreeing/restating the tweet (0.0)? Be harsh: "
+        "most replies are NOT distinct."
     )

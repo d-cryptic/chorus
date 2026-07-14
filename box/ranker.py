@@ -182,7 +182,11 @@ def judge_draft(c, draft, voice, *, model, api_key, tracker=None):
         if txt.startswith("```"):
             txt = txt.strip("`").split("\n", 1)[-1].rsplit("```", 1)[0]
         d = json.loads(txt)
-        return {k: d.get(k) for k in ("voice_match", "contract", "grounded") if k in d}
+        # NB: "distinct" MUST be included — it is what route_post() routes on. Omitting
+        # it silently made every candidate fall back to REPLY (the safe default), which
+        # looked healthy and hid the bug.
+        return {k: d.get(k) for k in ("voice_match", "contract", "grounded", "distinct")
+                if k in d}
     except Exception:
         return {}  # unknown -> pass
 
@@ -353,16 +357,10 @@ def run(args):
         astr = d.get("angle_strength", 0.5)
         drafts = d.get("drafts", [])
 
-        # --- the router: reply | quote | retweet | drop (costs no extra LLM) ---
-        route, route_why = G.route_post(c, angle_strength=astr, pillar_hit=pillar,
-                                        drafts=drafts)
-        if route == G.DROP:
-            routed["drop_post"] += 1
-            continue
-        if route == G.RETWEET:
-            drafts = []  # v0: a retweet is a decision row - no body, rationale only
-
-        # --- G3 judge: demote + ONE regenerate, never silently discard ---
+        # --- G3 judge FIRST: it is our only INDEPENDENT read of the draft ---
+        # (the drafter's own angle_strength is self-reported and measured 0.80-0.85 on
+        #  every draft, so it cannot decide routing.)
+        scores = {}
         if not args.dry_run and drafts and not args.no_judge:
             scores = judge_draft(c, drafts[0], voice, model=model, api_key=api_key,
                                  tracker=tracker)
@@ -377,8 +375,21 @@ def run(args):
                     if d2.get("drafts"):
                         drafts = d2["drafts"]
                         astr = d2.get("angle_strength", astr)
+                        s2 = judge_draft(c, drafts[0], voice, model=model,
+                                         api_key=api_key, tracker=tracker)
+                        if s2:
+                            scores = s2  # re-judge the regenerated draft
                 except B.BudgetError:
                     pass  # keep the demoted draft rather than lose the work
+
+        # --- the router, on the judge's independent distinctness score ---
+        route, route_why = G.route_post(c, distinct=scores.get("distinct"),
+                                        pillar_hit=pillar, drafts=drafts)
+        if route == G.DROP:
+            routed["drop_post"] += 1
+            continue
+        if route == G.RETWEET:
+            drafts = []  # v0: a retweet is a decision row - no body, rationale only
 
         score = finalize(pre, astr, weights)
         if score < tau:
@@ -389,7 +400,7 @@ def run(args):
             "tweet_id": c.get("id"), "tweet_url": c.get("url"),
             "tweet_text": c.get("text"), "author_handle": c.get("author"),
             "author_tier": c.get("author_tier"), "score": score,
-            "factors": {**comps, "angle": astr},
+            "factors": {**comps, "angle": astr, **{f"judge_{k}": v for k, v in scores.items()}},
             "pillar": pillar, "angle": d.get("angle"), "drafts": drafts,
             "target": route,
             "rationale": f"{route_why} | pre {pre} + angle {astr}",
