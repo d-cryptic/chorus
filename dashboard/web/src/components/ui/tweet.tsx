@@ -67,8 +67,13 @@ export function Tweet({
   const over = n > 280;
   return (
     <article
-      className={cn("flex gap-3 px-4 py-3", isDraft && "bg-[#16181c]/60")}
-      style={{ borderBottom: `1px solid ${LINE}` }}
+      className={cn("flex gap-3 px-4 py-3 transition-colors",
+        isDraft ? "hover:bg-[#080808]" : "hover:bg-[#080808]")}
+      style={{
+        borderBottom: `1px solid ${LINE}`,
+        // a draft is YOURS: mark it with X's blue accent rail, not a grey box
+        boxShadow: isDraft ? `inset 2px 0 0 ${X_BLUE}` : undefined,
+      }}
     >
       <Avatar handle={handle} />
       <div className="min-w-0 flex-1">

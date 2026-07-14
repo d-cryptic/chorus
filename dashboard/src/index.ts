@@ -82,8 +82,13 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
     }
     if (req.method === "GET" && url.pathname === "/api/spend") return json(await spendToday(env));
     if (req.method === "GET" && url.pathname === "/api/status") {
-      const row = await env.DB.prepare("SELECT started_at, finished_at, suggested, error FROM run_log ORDER BY id DESC LIMIT 1").first();
-      return json({ lastRun: row ?? null });
+      const row = await env.DB.prepare("SELECT started_at, finished_at, suggested, error, credits FROM run_log ORDER BY id DESC LIMIT 1").first();
+      // Recent failures, so a dead provider / blown budget is visible in the UI instead
+      // of only in /var/log/chorus.log where nobody looks.
+      const { results: alerts } = await env.DB.prepare(
+        "SELECT started_at, error FROM run_log WHERE error IS NOT NULL AND started_at > ? ORDER BY id DESC LIMIT 5"
+      ).bind(Date.now() - 7 * 86400000).all();
+      return json({ lastRun: row ?? null, alerts });
     }
     // Human control surface for the safety switches. Without this the kill-switch is
     // only reachable via raw SQL, which makes it useless in the moment you need it.
@@ -292,8 +297,9 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
         const r = await env.DB.prepare("INSERT INTO run_log (started_at) VALUES (?)").bind(now).run();
         return json({ id: r.meta.last_row_id });
       }
-      await env.DB.prepare("UPDATE run_log SET finished_at=?, suggested=?, error=? WHERE id=?")
-        .bind(now, b.suggested ?? null, b.error ?? null, b.id).run();
+      await env.DB.prepare("UPDATE run_log SET finished_at=?, suggested=?, error=?, credits=COALESCE(?,credits) WHERE id=?")
+        .bind(now, b.suggested ?? null, b.error ?? null,
+              b.credits ?? null, b.id).run();
       return json({ ok: true });
     }
     if (req.method === "POST" && p === "/api/box/outcome") {

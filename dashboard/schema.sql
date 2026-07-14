@@ -75,6 +75,9 @@ INSERT OR IGNORE INTO settings (id) VALUES (1);
 
 -- G5: one row per cycle → dashboard heartbeat ("last cycle 2h ago · 14 suggested").
 CREATE TABLE IF NOT EXISTS run_log (
+  -- credits = provider balance at cycle start. This is the meter that ACTUALLY binds:
+  -- daily_ceiling_usd counts our own estimate, and 100k credits = $1, so a $0.65 ceiling
+  -- is 65k credits/day. Surfacing it is how you see real runway.
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   started_at INTEGER NOT NULL, finished_at INTEGER, suggested INTEGER, error TEXT
 );

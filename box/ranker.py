@@ -400,10 +400,14 @@ def run(args):
         if bal is not None:
             need = int(os.environ.get("CHORUS_MIN_CREDITS", "1500"))  # ~1 cycle of headroom
             print(f"provider credits: {bal}")
+            try:
+                run_log(base, token, id=rid, credits=bal)  # so the UI can show runway
+            except Exception:
+                pass
             if bal <= 0:
                 _alert(f"Chorus STOPPED: provider credits exhausted ({bal}). "
                        f"Top up twitterapi.io - 100k credits = $1. Nothing will run until then.")
-                run_log(base, token, id=rid, suggested=0, error="no_credits")
+                run_log(base, token, id=rid, suggested=0, error="no_credits", credits=bal)
                 return
             if bal < need:
                 _alert(f"Chorus: provider credits LOW ({bal} left, ~{bal // 1500} cycles). "

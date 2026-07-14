@@ -30,6 +30,8 @@ export default function App() {
   const [toast, setToast] = useState("");
   const [review, setReview] = useState<any>(null);
   const [cfg, setCfg] = useState<any>(null);
+  const [alerts, setAlerts] = useState<any[]>([]);
+  const [credits, setCredits] = useState<number | null>(null);
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(""), 1500); };
 
   const load = useCallback(async () => {
@@ -41,6 +43,8 @@ export default function App() {
       ]);
       setCfg(cf.settings || null);
       setItems(sg.suggestions || []); setSpend(Number(sp.total) || 0);
+      setAlerts(st.alerts || []);
+      setCredits(st.lastRun?.credits ?? null);
       const r = st.lastRun;
       setBeat(r?.started_at ? `${Math.round((Date.now() - r.started_at) / 3.6e6)}h ago · ${r.suggested ?? 0} suggested${r.error ? " · ERROR" : ""}` : "no cycle yet");
     } catch (e: any) { setErr(String(e)); } finally { setLoading(false); }
@@ -80,12 +84,28 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen mx-auto max-w-3xl px-4 pb-24">
-      <header className="sticky top-0 z-10 flex flex-wrap items-center gap-3 py-4 bg-background/90 backdrop-blur border-b">
-        <div className="flex items-center gap-2"><span className="h-2.5 w-2.5 rounded-full bg-primary" /><h1 className="text-base font-semibold tracking-tight">Chorus</h1></div>
-        <span className="text-xs text-muted-foreground font-mono flex items-center gap-1"><Activity size={12} /> {beat}</span>
-        <div className="ml-auto flex items-center gap-3">
-          <span className="text-xs font-mono text-muted-foreground">spend <span className="text-primary">${spend.toFixed(2)}</span></span>
+    <div className="min-h-screen bg-black flex justify-center" style={{ color: "#e7e9ea" }}>
+      {/* left rail — X nav */}
+      <nav className="hidden md:flex flex-col items-start gap-1 w-[68px] xl:w-[255px] shrink-0 px-2 py-2 sticky top-0 h-screen">
+        <div className="p-3 text-[26px] font-black leading-none" style={{ color: "#e7e9ea" }}>✳</div>
+        {[["Queue", "queued"], ["Posted", "posted"], ["Dismissed", "dismissed"]].map(([label, key]) => (
+          <button key={key} onClick={() => setStatus(key)}
+            className="flex items-center gap-4 rounded-full px-3 xl:pr-6 py-3 hover:bg-[#181818] transition-colors"
+            style={{ fontWeight: status === key ? 700 : 400, color: "#e7e9ea" }}>
+            <span className="hidden xl:inline text-[20px] leading-none">{label}</span>
+            <span className="xl:hidden text-[18px] leading-none">{String(label)[0]}</span>
+          </button>
+        ))}
+      </nav>
+
+      {/* center — the feed, exactly X's 600px column */}
+      <main className="w-full max-w-[600px] shrink-0" style={{ borderLeft: "1px solid #2f3336", borderRight: "1px solid #2f3336" }}>
+      <header className="sticky top-0 z-10 flex items-center gap-3 px-4 h-[53px] backdrop-blur"
+              style={{ background: "rgba(0,0,0,0.65)", borderBottom: "1px solid #2f3336" }}>
+        <h1 className="text-[20px] font-bold tracking-tight">Queue</h1>
+        <span className="text-xs font-mono flex items-center gap-1" style={{ color: "#71767b" }}><Activity size={12} /> {beat}</span>
+        <div className="ml-auto flex items-center gap-1">
+
           {cfg && (
             <>
               <Button variant="ghost" size="icon" title={cfg.paused ? "resume agent" : "pause agent (soft, resumable)"}
@@ -107,6 +127,13 @@ export default function App() {
         </div>
       </header>
 
+      {alerts.length > 0 && (
+        <div className="mt-3 rounded-md border border-destructive/50 px-3 py-2 text-xs font-mono text-destructive">
+          {alerts.length} failed cycle(s) in the last 7d — latest: <b>{alerts[0].error}</b>
+          {alerts[0].error === "no_credits" && " → top up twitterapi.io (100k credits = $1)"}
+          {alerts[0].error === "no_candidates" && " → the read provider returned nothing; check keys/credit"}
+        </div>
+      )}
       {cfg && Boolean(cfg.killed || cfg.paused) && (
         <div className={cn("mt-3 rounded-md border px-3 py-2 text-xs font-mono",
           cfg.killed ? "border-destructive/50 text-destructive" : "border-amber-500/40 text-amber-400")}>
@@ -115,37 +142,48 @@ export default function App() {
             : "PAUSED — cycles are stopped (resumable). Budget untouched."}
         </div>
       )}
-      <div className="flex gap-1.5 py-4">
-        {["queued", "posted", "dismissed"].map((s) => (
-          <Button key={s} size="sm" variant={status === s ? "secondary" : "ghost"} onClick={() => setStatus(s)} className="capitalize">{s}</Button>
+      <div className="flex" style={{ borderBottom: "1px solid #2f3336" }}>
+        {["queued", "posted", "dismissed"].map((t) => (
+          <button
+            key={t}
+            onClick={() => setStatus(t)}
+            className="relative flex-1 h-[53px] text-[15px] transition-colors hover:bg-[#181818] capitalize"
+            style={{ color: status === t ? "#e7e9ea" : "#71767b", fontWeight: status === t ? 700 : 400 }}
+          >
+            {t}
+            {status === t && (
+              <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-1 rounded-full"
+                    style={{ width: 56, background: "#1d9bf0" }} />
+            )}
+          </button>
         ))}
       </div>
 
       {review && <ReviewPanel r={review} />}
 
-      {loading ? <p className="text-sm text-muted-foreground font-mono py-16 text-center">loading…</p>
+      {loading ? <p className="py-16 text-center text-[15px]" style={{ color: "#71767b" }}>Loading…</p>
         : err ? <p className="text-sm text-destructive font-mono py-16 text-center">{err}</p>
-        : items.length === 0 ? <p className="text-sm text-muted-foreground font-mono py-16 text-center">nothing {status}.</p>
-        : <div className="space-y-3">
+        : items.length === 0 ? <p className="py-16 text-center text-[15px]" style={{ color: "#71767b" }}>Nothing {status} yet.</p>
+        : <div>
             {items.map((s) => {
               const drafts: string[] = parse(s.drafts, []);
               const url = s.tweet_url || (s.tweet_id ? `https://x.com/i/web/status/${s.tweet_id}` : null);
               const me = ME;
               return (
-                <Card key={s.id} className="overflow-hidden border-[#2f3336] bg-black p-0">
+                <div key={s.id} className="transition-colors" style={{ borderBottom: "1px solid #2f3336" }}>
                   {/* meta strip — Chorus's own signal, kept outside the X-accurate render */}
-                  <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground flex-wrap px-4 pt-3">
-                    <Badge className="border-primary/40 text-primary bg-primary/10 font-semibold">{s.score.toFixed(2)}</Badge>
-                    <Badge className="border-border text-muted-foreground capitalize">{s.target || "reply"}</Badge>
-                    {s.author_tier && <Badge className="border-border text-muted-foreground">tier {s.author_tier}</Badge>}
-                    {s.pillar && <Badge className="border-border text-muted-foreground">{s.pillar}</Badge>}
-                    {url && <a href={url} target="_blank" className="ml-auto inline-flex items-center gap-1 hover:text-foreground">on X <ExternalLink size={11} /></a>}
+                  <div className="flex items-center gap-2 text-[13px] px-4 pt-2" style={{ color: "#71767b" }}>
+                    <span className="capitalize" style={{ color: "#1d9bf0" }}>{s.target || "reply"}</span>
+                    <span>·</span><span className="font-mono">{s.score.toFixed(2)}</span>
+                    {s.pillar && <><span>·</span><span>{s.pillar}</span></>}
+                    {s.author_tier && <><span>·</span><span>tier {s.author_tier}</span></>}
+                    {url && <a href={url} target="_blank" className="ml-auto inline-flex items-center gap-1 hover:underline" style={{ color: "#71767b" }}>on X <ExternalLink size={11} /></a>}
                   </div>
 
                   {/* THEIR tweet — exactly as it appears on X */}
                   <Tweet handle={s.author_handle} text={s.tweet_text} />
 
-                  {s.angle && <p className="text-xs font-mono text-amber-300/90 px-4 pt-2">▸ {s.angle}</p>}
+                  {s.angle && <p className="text-[13px] px-4 pt-1" style={{ color: "#71767b" }}>▸ {s.angle}</p>}
 
                   {/* YOUR drafts — rendered as the reply will actually look */}
                   {drafts.map((d, i) => (
@@ -175,18 +213,52 @@ export default function App() {
                   )}
 
                   {status === "queued" && (
-                    <div className="flex gap-1.5 flex-wrap px-4 py-3">
-                      <Button size="sm" onClick={() => act(s, "posted")}><Check size={14} /> posted</Button>
-                      <Button size="sm" variant="outline" onClick={() => act(s, "posted_edited")}><Pencil size={14} /> edited</Button>
-                      <Button size="sm" variant="ghost" onClick={() => act(s, "snoozed")}><Clock size={14} /> snooze</Button>
-                      <Button size="sm" variant="destructive" onClick={() => act(s, "dismissed")}><X size={14} /> dismiss</Button>
+                    <div className="flex gap-2 flex-wrap px-4 py-3">
+                      <button onClick={() => act(s, "posted")}
+                        className="rounded-full px-4 py-1.5 text-[14px] font-bold text-black hover:opacity-90"
+                        style={{ background: "#1d9bf0", color: "#fff" }}>I posted this</button>
+                      <button onClick={() => act(s, "posted_edited")}
+                        className="rounded-full px-4 py-1.5 text-[14px] font-bold hover:bg-[#181818]"
+                        style={{ border: "1px solid #536471", color: "#e7e9ea" }}>Posted edited</button>
+                      <button onClick={() => act(s, "snoozed")}
+                        className="rounded-full px-4 py-1.5 text-[14px] hover:bg-[#181818]"
+                        style={{ border: "1px solid #536471", color: "#71767b" }}>Snooze</button>
+                      <button onClick={() => act(s, "dismissed")}
+                        className="rounded-full px-4 py-1.5 text-[14px] hover:bg-[#f4212e]/10"
+                        style={{ border: "1px solid #67070f", color: "#f4212e" }}>Dismiss</button>
                     </div>
                   )}
-                </Card>
+                </div>
               );
             })}
           </div>}
+      </main>
+
+      {/* right rail — where X puts trends, we put the things that can stop the agent */}
+      <aside className="hidden lg:block w-[350px] shrink-0 px-6 py-3 sticky top-0 h-screen">
+        <div className="rounded-2xl p-4" style={{ background: "#16181c" }}>
+          <h2 className="text-[20px] font-black mb-3">Agent</h2>
+          <Stat label="spend today" value={`$${spend.toFixed(2)}`} />
+          {credits !== null && (
+            <Stat label="provider credits" value={`${credits >= 1000 ? Math.round(credits / 1000) + "k" : credits}`}
+                  sub={`~${Math.max(0, Math.floor(credits / 8600))}d runway`} danger={credits < 5000} />
+          )}
+          <Stat label="last cycle" value={beat} />
+          {cfg && <Stat label="state" value={cfg.killed ? "KILLED" : cfg.paused ? "paused" : "running"} danger={Boolean(cfg.killed)} />}
+        </div>
+      </aside>
+
       {toast && <Toast msg={toast} />}
+    </div>
+  );
+}
+
+function Stat({ label, value, sub, danger }: { label: string; value: any; sub?: string; danger?: boolean }) {
+  return (
+    <div className="py-2" style={{ borderTop: "1px solid #2f3336" }}>
+      <div className="text-[13px]" style={{ color: "#71767b" }}>{label}</div>
+      <div className="text-[15px] font-bold" style={{ color: danger ? "#f4212e" : "#e7e9ea" }}>{value}</div>
+      {sub && <div className="text-[12px] font-mono" style={{ color: "#71767b" }}>{sub}</div>}
     </div>
   );
 }
