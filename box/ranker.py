@@ -12,7 +12,7 @@ Env: INGEST_URL, INGEST_TOKEN, OPENROUTER_API_KEY, OPENROUTER_MODEL, CHORUS_PILL
 from __future__ import annotations
 import os, sys, json, time, argparse, hashlib, urllib.request, urllib.error
 
-DEFAULT_WEIGHTS = {"pillar": 0.22, "author": 0.18, "upside": 0.16, "fresh": 0.12, "saturation": 0.15, "relationship": 0.10}
+DEFAULT_WEIGHTS = {"pillar": 0.22, "author": 0.18, "upside": 0.16, "fresh": 0.12, "saturation": 0.15, "relationship": 0.10, "angle": 0.24}
 TIER = {"A": 1.0, "B": 0.6, "C": 0.3}
 WINDOW_H = 48
 
@@ -56,7 +56,9 @@ def pre_score(c, weights, pillars, *, now, mutuals=()):
              weights["upside"] * upside + weights["fresh"] * fresh +
              weights.get("relationship", 0) * mutual -
              weights["saturation"] * saturation)
-    return round(score, 4), pillar_hit
+    comps = {"pillar": pillar, "author": tier, "upside": upside, "fresh": fresh,
+             "relationship": mutual, "saturation": saturation}
+    return round(score, 4), pillar_hit, comps
 
 def prerank(cands, weights, pillars, *, now, topk=50, mutuals=()):
     scored = [(pre_score(c, weights, pillars, now=now, mutuals=mutuals), c) for c in cands]
@@ -64,8 +66,8 @@ def prerank(cands, weights, pillars, *, now, topk=50, mutuals=()):
     return scored[:topk]
 
 def finalize(pre, angle_strength, weights):
-    """Fold the LLM's angle_strength (weight 0.24) into the pre-score for the final rank."""
-    return round(pre + 0.24 * angle_strength, 4)
+    """Fold the LLM's angle_strength (tuned weight) into the pre-score for the final rank."""
+    return round(pre + weights.get("angle", 0.24) * angle_strength, 4)
 
 # ---------- network edges (stubbable) ----------
 
@@ -173,12 +175,13 @@ def run(args):
 
     rid = None if args.dry_run else run_log(base, token, action="start").get("id")
     emitted = 0; llm_calls = 0
-    for (pre, pillar), c in top:
+    for (pre, pillar, comps), c in top:
         if not args.dry_run:
             llm_calls += 1
         d = ({"angle": "dry", "angle_strength": 0.5, "drafts": ["dry"]}
              if args.dry_run else llm_draft(c, pillar, voice, model=model, api_key=api_key))
-        score = finalize(pre, d.get("angle_strength", 0.5), weights)
+        astr = d.get("angle_strength", 0.5)
+        score = finalize(pre, astr, weights)
         if score < tau:
             continue
         payload = {
@@ -186,7 +189,7 @@ def run(args):
             "tweet_id": c.get("id"), "tweet_url": c.get("url"),
             "tweet_text": c.get("text"), "author_handle": c.get("author"),
             "author_tier": c.get("author_tier"), "score": score,
-            "factors": {"pillar": 1.0 if pillar else 0.0, "angle": d.get("angle_strength", 0.5)},
+            "factors": {**comps, "angle": astr},
             "pillar": pillar, "angle": d.get("angle"), "drafts": d.get("drafts", []),
             "rationale": f"pre {pre} + angle {d.get('angle_strength')}",
             "expires_at": now + WINDOW_H * 3600 * 1000,
@@ -203,8 +206,8 @@ def run(args):
         est = round(len(cands) * 0.00015 + llm_calls * 0.0003, 4)  # adapter tweets + LLM drafts
         try:
             _req(f"{base}/api/box/spend", "POST", token, {"source": "cycle", "usd": est})
-        except Exception:
-            pass
+        except Exception as e:
+            print("WARN: spend not recorded (ceiling can't bind):", repr(e)[:60])
     print(f"emitted {emitted} suggestions (of {len(kept)} gated / {len(cands)} candidates)")
 
 def main():

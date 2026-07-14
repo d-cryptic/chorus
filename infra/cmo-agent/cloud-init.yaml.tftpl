@@ -1,7 +1,7 @@
 #cloud-config
 # First-boot provisioning for the CMO Hermes runtime box.
-# Rendered by templatefile() in hetzner.tf — $${...} would be a literal shell var;
-# $${...} is escaped, plain $${...} template vars are substituted by OpenTofu.
+# Rendered by templatefile() in hetzner.tf — ${...} is an OpenTofu template var (substituted);
+# a literal shell ${VAR} must be escaped as $${VAR}.
 
 package_update: true
 package_upgrade: true

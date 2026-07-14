@@ -23,18 +23,18 @@ def run():
     g3=R.gate([C(id="10h",text="fresh enough",author="b",ts=NOW-10*3600*1000)], denylist=[], my_handle="me", now=NOW)
     chk(len(g3)==1, "gate keeps a 10h-old tweet (ms->hours unit)")
     # and pre_score fresh should be high for recent, low for old
-    fr_new,_=R.pre_score(C(text="on writing",ts=NOW),W,P,now=NOW)
-    fr_old,_=R.pre_score(C(text="on writing",ts=NOW-40*3600*1000),W,P,now=NOW)
+    fr_new,_,_=R.pre_score(C(text="on writing",ts=NOW),W,P,now=NOW)
+    fr_old,_,_=R.pre_score(C(text="on writing",ts=NOW-40*3600*1000),W,P,now=NOW)
     chk(fr_new>fr_old, "fresher tweet scores higher")
 
     # pre_score: pillar hit + tier
-    s_hit,pillar=R.pre_score(C(text="on leverage",author_tier="A"),W,P,now=NOW)
-    s_miss,_=R.pre_score(C(text="nothing here",author_tier="C"),W,P,now=NOW)
+    s_hit,pillar,_=R.pre_score(C(text="on leverage",author_tier="A"),W,P,now=NOW)
+    s_miss,_,_=R.pre_score(C(text="nothing here",author_tier="C"),W,P,now=NOW)
     chk(pillar=="leverage", "pillar detected")
     chk(s_hit>s_miss, f"pillar+tier scores higher ({s_hit} > {s_miss})")
     # saturation penalty
-    s_lo,_=R.pre_score(C(text="on writing",author_tier="A",reply_count=500),W,P,now=NOW)
-    s_hi,_=R.pre_score(C(text="on writing",author_tier="A",reply_count=0),W,P,now=NOW)
+    s_lo,_,_=R.pre_score(C(text="on writing",author_tier="A",reply_count=500),W,P,now=NOW)
+    s_hi,_,_=R.pre_score(C(text="on writing",author_tier="A",reply_count=0),W,P,now=NOW)
     chk(s_hi>s_lo, "saturation penalizes over-replied")
 
     # prerank order + topk
