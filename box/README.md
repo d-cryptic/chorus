@@ -194,3 +194,31 @@ tries a topic match then falls back to the voice docs. Honest priming, not fake 
 
 **Zero candidates now ALERTS** rather than silently no-opping — an out-of-credit
 provider (402) drops every query and would otherwise look like "a quiet day" forever.
+
+## Voice: why drafts stopped sounding like AI (`style_mine.py`, onboard, judge)
+
+Three compounding bugs made every draft read as AI slop — and worse, made them lie:
+
+1. **The learned voice was never used.** `onboard.py`/`voice_refine.py` synthesise your
+   real voice into `chorus:self`, but the drafter read the static `CHORUS_VOICE` env
+   string ("concise, specific, no hype") and nothing ever read the doc back. Every
+   voice update was inert. `ranker.get_voice()` now prefers the stored voice_model.
+2. **`onboard.py` crashed** on any fenced/non-JSON LLM reply, so the voice was never
+   captured in the first place. Fence-strip + non-fatal fallback added.
+3. **The prompt demanded specificity but banned nothing**, so the model manufactured it:
+   *"Our testnet processed 1.2M XRP txs/day"*, *"our logs show 37%"*. All invented. The
+   judge waved them through because `grounded` allowed claims "supported by the tweet OR
+   **the author's own experience**" — an unfalsifiable escape hatch. Both fixed: the
+   drafter is forbidden from inventing first-person claims/numbers (having no data is
+   explicitly fine — opinion, question, counterexample, mechanism), and `grounded` now
+   scores 0 for ANY unverifiable first-person data claim.
+
+Also added a `human` judge dimension (AI-tells: invented-stat-then-tradeoff, "Key
+insight:", tricolons, over-polish). `human` and `grounded` both FAIL a draft -> demote +
+one regenerate.
+
+**`style_mine.py`** (weekly) mines high-engagement posts from your targets and extracts
+the STRUCTURAL moves that earn replies (hook shapes, reply-bait, what winners avoid) ->
+`chorus:niche` -> fed to the drafter. HARD BOUNDARY: patterns only, never content —
+Chorus must never launder someone else's claims into your mouth. Your voice always wins;
+if a pattern fights the voice, the pattern is dropped.

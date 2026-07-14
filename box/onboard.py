@@ -17,12 +17,26 @@ def synthesize(tweets, *, model, api_key):
     if not api_key:
         return {"pillars": [], "voice": f"(un-synthesized; {len(tweets)} tweets sampled)", "dos": [], "donts": []}
     prompt = ("From these tweets by one person, infer their content pillars + writing voice.\n"
+              "Describe the voice CONCRETELY and usably: sentence length, capitalisation, "
+              "punctuation habits, slang, how they open/close, how technical, whether they "
+              "hedge, use of numbers. Quote 2-3 short phrases that are characteristically "
+              "theirs. Do NOT write a flattering summary - write what a ghostwriter needs.\n"
               f"{sample}\n\nReturn JSON {{\"pillars\":[3-6 short topics], \"voice\": one-paragraph style, "
-              "\"dos\":[..], \"donts\":[..]}}.")
+              "\"dos\":[..], \"donts\":[..], \"samples\":[3-5 verbatim tweets that best show the voice]}}.")
     out = _req("https://openrouter.ai/api/v1/chat/completions", "POST", api_key,
                {"model": model, "messages": [{"role": "user", "content": prompt}],
-                "response_format": {"type": "json_object"}, "max_tokens": 600})
-    return json.loads(out["choices"][0]["message"]["content"])
+                "response_format": {"type": "json_object"}, "max_tokens": 900})
+    txt = (out["choices"][0]["message"]["content"] or "").strip()
+    if txt.startswith("```"):  # models fence JSON despite response_format
+        txt = txt.strip("`").split("\n", 1)[-1].rsplit("```", 1)[0]
+    try:
+        return json.loads(txt)
+    except json.JSONDecodeError:
+        # never crash the onboard on one bad response - degrade to raw samples, which
+        # are still the most useful thing we can store for voice priming.
+        print("WARN: could not parse voice JSON; storing raw samples only")
+        return {"pillars": [], "voice": "(unparsed)", "dos": [], "donts": [],
+                "samples": [t.get("text", "") for t in tweets[:5]]}
 
 def sm_add(content, kind, key, *, dry):
     payload = {"content": content, "containerTags": ["chorus:self"],
