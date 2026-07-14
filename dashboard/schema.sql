@@ -57,7 +57,13 @@ CREATE TABLE IF NOT EXISTS settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   paused INTEGER NOT NULL DEFAULT 0,
   daily_ceiling_usd REAL NOT NULL DEFAULT 0.65,
-  quiet_hours TEXT, denylist TEXT
+  quiet_hours TEXT, denylist TEXT,
+  -- killed = global kill-switch: absolute, independent of budget, beats `paused`.
+  -- `paused` is a soft/resumable stop; `killed` halts every paid call immediately.
+  killed INTEGER NOT NULL DEFAULT 0,
+  -- L0 suggest-only | L1 draft-and-queue (effective max: Chorus has no write lane).
+  -- L2/L3 are refused at the enforcement point - they need outward actions.
+  autonomy_level TEXT NOT NULL DEFAULT 'L1'
 );
 INSERT OR IGNORE INTO settings (id) VALUES (1);
 

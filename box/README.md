@@ -105,3 +105,25 @@ See [../docs/runbook-deploy.md](../docs/runbook-deploy.md) — the live wiring y
 - No embeddings in v1 — keyword pillar match + tier + freshness + upside − saturation is enough.
 - LLM step has a deterministic fallback when `OPENROUTER_API_KEY` is unset (un-voiced drafts) so
   `--dry-run` and testing work offline.
+
+## Budget guard, kill-switch, autonomy (`budget.py`)
+
+Ports the v0 nakama `BudgetTracker` semantics — see `docs/v0-parity.md`.
+
+- **`would_exceed` before every paid call.** `ranker.py` re-checks the ceiling before
+  each LLM draft, so a long cycle cannot blow the budget mid-run (it used to be checked
+  once, before the loop). On breach: stop + checkpoint + **alert** — never a silent skip.
+- **Spend is recorded as incurred**, not estimated post-hoc, and counted locally so the
+  ceiling binds *even if the ledger POST fails*. Flushed every 10 calls + at cycle end.
+- **`killed`** = global kill-switch in `settings`. Absolute: beats `paused` and any
+  remaining budget. `paused` is the soft, resumable stop.
+- **`quiet_hours`** is now actually enforced (the column existed but nothing read it).
+- **Fail-closed**: if the ceiling/kill-switch can't be read, the cycle aborts + alerts
+  rather than assuming it's safe to spend.
+- **`autonomy_level`**: `L0` suggest-only | `L1` draft-and-queue (default). v0's `L2`
+  act-with-approval / `L3` autonomous gate *outward actions* — Chorus has no write lane
+  by design, so they are **refused** at the enforcement point rather than faked.
+- **`CircuitBreaker`** (closed→open→cooldown→half_open) is for *provider reliability*
+  and is deliberately separate from the budget ceiling. Wrap any provider call with it.
+
+Rates live in `budget.RATES` (USD/unit). Unknown ops raise — never assume free.

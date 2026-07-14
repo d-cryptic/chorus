@@ -162,8 +162,8 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       return json({ feedback: results });
     }
     if (req.method === "GET" && p === "/api/box/settings") {
-      const row = await env.DB.prepare("SELECT paused, daily_ceiling_usd, quiet_hours, denylist FROM settings WHERE id=1").first();
-      return json({ settings: row ?? { paused: 0, daily_ceiling_usd: 0.65 } });
+      const row = await env.DB.prepare("SELECT paused, daily_ceiling_usd, quiet_hours, denylist, killed, autonomy_level FROM settings WHERE id=1").first();
+      return json({ settings: row ?? { paused: 0, daily_ceiling_usd: 0.65, killed: 0, autonomy_level: "L1" } });
     }
     const b = req.method === "POST" ? ((await req.json()) as any) : {};
     const now = Date.now();

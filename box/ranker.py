@@ -11,6 +11,7 @@ Env: INGEST_URL, INGEST_TOKEN, OPENROUTER_API_KEY, OPENROUTER_MODEL, CHORUS_PILL
 """
 from __future__ import annotations
 import os, sys, json, time, argparse, hashlib, urllib.request, urllib.error
+import budget as B
 
 DEFAULT_WEIGHTS = {"pillar": 0.22, "author": 0.18, "upside": 0.16, "fresh": 0.12, "saturation": 0.15, "relationship": 0.10, "angle": 0.24}
 TIER = {"A": 1.0, "B": 0.6, "C": 0.3}
@@ -91,13 +92,45 @@ def get_weights(base, token):
         return dict(DEFAULT_WEIGHTS)
 
 def get_budget(base, token):
-    """Returns (spent, ceiling, paused)."""
+    """Returns (spent, ceiling, paused, killed, quiet_hours, autonomy_level).
+
+    Fail-CLOSED on error: if we cannot read the ceiling/kill-switch we must not
+    assume it is safe to spend (v0: hard-stop over silent degrade).
+    """
+    spend = _req(f"{base}/api/box/spend", token=token).get("total", 0.0)
+    s = _req(f"{base}/api/box/settings", token=token).get("settings", {}) or {}
+    return (spend, s.get("daily_ceiling_usd", 0.65), bool(s.get("paused", 0)),
+            bool(s.get("killed", 0)), s.get("quiet_hours"),
+            s.get("autonomy_level", "L1"))
+
+
+def _alert(msg):
+    """Breach/pause alerts. v0 rule: pause = checkpoint + alert, NEVER a silent drop."""
+    print(f"ALERT: {msg}")
     try:
-        spend = _req(f"{base}/api/box/spend", token=token).get("total", 0.0)
-        s = _req(f"{base}/api/box/settings", token=token).get("settings", {}) or {}
-        return spend, s.get("daily_ceiling_usd", 0.65), bool(s.get("paused", 0))
-    except Exception:
-        return 0.0, 0.65, False
+        import notify
+        notify.send(msg)
+    except Exception as e:  # alerting must never break the cycle
+        print(f"  (alert not delivered: {repr(e)[:40]})")
+
+
+def flush_spend(base, token, tracker, *, source="cycle"):
+    """POST incurred spend and fold it into the remote total. Returns True on success.
+
+    A failure here is loud: the ledger is the ONLY thing that makes tomorrow's
+    ceiling bind, and the tracker already counts it locally for THIS cycle.
+    """
+    usd = tracker.flush()
+    if usd <= 0:
+        return True
+    try:
+        _req(f"{base}/api/box/spend", "POST", token, {"source": source, "usd": usd})
+        tracker.flushed()
+        return True
+    except Exception as e:
+        print(f"WARN: spend ${usd} NOT recorded ({repr(e)[:50]}) - "
+              f"local ceiling still binds this cycle, but the ledger is now behind")
+        return False
 
 def llm_draft(c, pillar, voice, *, model, api_key):
     """One LLM call -> {angle, drafts[], angle_strength}. Deterministic fallback when no key."""
@@ -153,17 +186,40 @@ def run(args):
     now = int(time.time() * 1000)
     tau, cap = args.tau, args.cap
 
-    spent, ceiling, paused = (0.0, 0.65, False) if args.dry_run else get_budget(base, token)
-    if paused:
-        print("paused via settings — nothing to do"); return
-    if spent >= ceiling:
-        print(f"over budget ({spent} >= {ceiling}) — skipping"); return
+    if args.dry_run:
+        tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)
+        autonomy = "L1"
+    else:
+        try:
+            spent, ceiling, paused, killed, quiet, autonomy = get_budget(base, token)
+        except Exception as e:
+            # Fail CLOSED: if we cannot read the ceiling/kill-switch, we do not spend.
+            _alert(f"Chorus cycle aborted: cannot read budget/settings ({repr(e)[:60]})")
+            return
+        tracker = B.BudgetTracker(spent=spent, ceiling=ceiling, paused=paused,
+                                  killed=killed, quiet=quiet,
+                                  hour_local=time.localtime().tm_hour)
+    # Enforcement point: every outward-ish action funnels through the autonomy gate.
+    # Chorus has NO write lane, so L1 (draft-and-queue) is the effective ceiling.
+    if autonomy not in ("L0", "L1"):
+        raise SystemExit(f"autonomy_level={autonomy} refused: Chorus is suggest-only "
+                         "(no write lane exists). Use L0 or L1.")
+    # Fail fast (before any paid work) but DO NOT rely on this alone - every paid
+    # call below re-checks, so a long cycle cannot blow the ceiling mid-run.
+    try:
+        tracker.check("candidate_read", 1)
+    except B.BudgetError as e:
+        print(f"cycle refused ({e.reason}): {e}")
+        if not args.dry_run:
+            _alert(f"Chorus paused: {e.reason} - {e}")
+        return
 
     import json as _j
     _tf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "targets.json")
     mutuals = tuple(h.lower() for h in _j.load(open(_tf)).get("mutuals", [])) if os.path.exists(_tf) else ()
     weights = DEFAULT_WEIGHTS if args.dry_run else get_weights(base, token)
     cands = load_candidates(args, now)
+    tracker.record("candidate_read", len(cands))  # incurred the moment we fetched
     kept = gate(cands, denylist=args.denylist, my_handle=handle, now=now)
     if os.environ.get("EMBED_PILLARS") == "1" and pillars and kept:
         try:
@@ -175,12 +231,26 @@ def run(args):
     top = prerank(kept, weights, pillars, now=now, topk=args.topk, mutuals=mutuals)
 
     rid = None if args.dry_run else run_log(base, token, action="start").get("id")
-    emitted = 0; llm_calls = 0
+    emitted = 0; llm_calls = 0; stop_reason = None
     for (pre, pillar, comps), c in top:
+        # THE gate: re-checked before EVERY paid call, so a long cycle cannot blow
+        # the ceiling mid-run (the old code checked once, before the loop).
         if not args.dry_run:
+            try:
+                tracker.check("llm_draft", 1)
+            except B.BudgetError as e:
+                # pause + checkpoint + alert; the queue keeps what we already emitted
+                stop_reason = f"{e.reason}: {e}"
+                _alert(f"Chorus stopped mid-cycle ({e.reason}) after {emitted} "
+                       f"suggestions, ${tracker.spent} spent of ${tracker.ceiling}")
+                break
             llm_calls += 1
         d = ({"angle": "dry", "angle_strength": 0.5, "drafts": ["dry"]}
              if args.dry_run else llm_draft(c, pillar, voice, model=model, api_key=api_key))
+        if not args.dry_run:
+            tracker.record("llm_draft", 1)      # book it as incurred, immediately
+            if llm_calls % 10 == 0:             # flush periodically so a crash
+                flush_spend(base, token, tracker)  # cannot lose the whole ledger
         astr = d.get("angle_strength", 0.5)
         score = finalize(pre, astr, weights)
         if score < tau:
@@ -203,13 +273,11 @@ def run(args):
         if emitted >= cap:
             break
     if not args.dry_run:
-        run_log(base, token, id=rid, suggested=emitted)
-        est = round(len(cands) * 0.00015 + llm_calls * 0.0003, 4)  # adapter tweets + LLM drafts
-        try:
-            _req(f"{base}/api/box/spend", "POST", token, {"source": "cycle", "usd": est})
-        except Exception as e:
-            print("WARN: spend not recorded (ceiling can't bind):", repr(e)[:60])
-    print(f"emitted {emitted} suggestions (of {len(kept)} gated / {len(cands)} candidates)")
+        run_log(base, token, id=rid, suggested=emitted, error=stop_reason)
+        flush_spend(base, token, tracker)  # real metered spend, not a post-hoc guess
+    tail = f" [STOPPED: {stop_reason}]" if stop_reason else ""
+    print(f"emitted {emitted} suggestions (of {len(kept)} gated / {len(cands)} candidates), "
+          f"spent ${tracker.spent} of ${tracker.ceiling}{tail}")
 
 def main():
     ap = argparse.ArgumentParser()
