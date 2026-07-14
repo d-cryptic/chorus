@@ -91,3 +91,27 @@ resource "cloudflare_zero_trust_access_policy" "ssh_owner" {
     email = var.access_emails
   }
 }
+
+# ---- SSH-over-tunnel: non-interactive service token -------------------------
+# Lets SSH-over-Access be VERIFIED and used without a browser SSO round-trip, and
+# serves as a headless break-glass once public port 22 is closed (enable_public_ssh
+# = false). Defense in depth is preserved: the token only gets you THROUGH Access to
+# port 22 — the box is key-only, so the SSH private key is still required to get a
+# shell. Secret lives in state + .ssh_service_token (git-ignored), never in the repo.
+resource "cloudflare_zero_trust_access_service_token" "ssh_box" {
+  account_id = var.account_id
+  name       = "chorus-ssh-box"
+  duration   = "8760h" # 1y; rotate by tainting this resource
+}
+
+resource "cloudflare_zero_trust_access_policy" "ssh_service" {
+  account_id     = var.account_id
+  application_id = cloudflare_zero_trust_access_application.ssh.id
+  name           = "allow-service-token"
+  precedence     = 2
+  decision       = "non_identity" # service-token auth (no identity/browser)
+
+  include {
+    service_token = [cloudflare_zero_trust_access_service_token.ssh_box.id]
+  }
+}

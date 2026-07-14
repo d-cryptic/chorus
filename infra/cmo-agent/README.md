@@ -67,9 +67,38 @@ Then: `cp terraform.tfvars.example terraform.tfvars`, set `account_id`
 make init && make plan     # review
 make apply                 # provision (~1–2 min; ~EUR 3.8/mo for cax11)
 make output                # IPs, URLs, allowed emails
-cloudflared access ssh --hostname chorus-ssh.barundebnath.com   # gated SSH
+./ssh_box.sh               # SSH to the box over the tunnel (see below)
 make destroy               # tear down
 ```
+
+## SSH is tunnel-only (public port 22 is CLOSED)
+
+`enable_public_ssh = false` — the hcloud firewall exposes **no** inbound SSH. The box is
+reachable only through the Cloudflare tunnel + Access. Two ways in:
+
+```bash
+./ssh_box.sh                       # non-interactive: uses the Access service token
+./ssh_box.sh 'systemctl status cron'
+
+# or browser SSO (owner email policy), no token needed:
+ssh -o ProxyCommand='cloudflared access ssh --hostname %h' root@chorus-ssh.barundebnath.com
+```
+
+The `chorus-ssh-box` Access **service token** (`.ssh_service_token`, git-ignored, 1y) allows
+headless auth via a `non_identity` policy. Defense in depth is intact: the token only gets you
+through Access to port 22 — the box is key-only, so the SSH private key is still required.
+Rotate by tainting `cloudflare_zero_trust_access_service_token.ssh_box`.
+
+**Break-glass** (tunnel/Access down): use the Hetzner Cloud console (web VNC), or set
+`enable_public_ssh = true` in `terraform.tfvars` and `tofu apply`.
+
+## ⚠️ `user_data` is lifecycle-ignored on purpose
+
+`hcloud_server.cmo` sets `lifecycle { ignore_changes = [user_data, ssh_keys, image] }`.
+cloud-init `user_data` is ForceNew in the provider but only ever takes effect at **first boot** —
+so without this guard, applying without the exact same `TF_VAR_*` secrets in your env plans a
+silent **destroy + recreate** and wipes the live box (`/opt/chorus`, the memory DB, cron).
+To genuinely re-provision, taint/replace the server deliberately.
 
 ## Finish steps (verify-first, not codifiable)
 

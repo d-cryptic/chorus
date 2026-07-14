@@ -37,3 +37,4 @@ infra/cmo-agent/.deploy_token
 # shadcn UI build
 dashboard/web/node_modules/
 dashboard/web/.vite/
+infra/cmo-agent/.ssh_service_token
