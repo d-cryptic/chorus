@@ -17,6 +17,7 @@ CREATE TABLE IF NOT EXISTS suggestion (
   -- router decision (v0 'the spine'): reply | quote | retweet. A retweet row
   -- carries NO drafts - just a rationale for why it is worth amplifying.
   target         TEXT NOT NULL DEFAULT 'reply',
+  media          TEXT,                          -- JSON [{type,url,page}] from the tweet
   gif            TEXT,                          -- Giphy SEARCH phrase (v0: search, never generate)
   thread         TEXT,                          -- JSON array; only when the take needs >280 chars
 
@@ -70,7 +71,9 @@ CREATE TABLE IF NOT EXISTS settings (
   killed INTEGER NOT NULL DEFAULT 0,
   -- L0 suggest-only | L1 draft-and-queue (effective max: Chorus has no write lane).
   -- L2/L3 are refused at the enforcement point - they need outward actions.
-  autonomy_level TEXT NOT NULL DEFAULT 'L1'
+  autonomy_level TEXT NOT NULL DEFAULT 'L1',
+  -- set by the dashboard's Fetch button; the box polls it every 5m and runs a cycle
+  fetch_now      INTEGER NOT NULL DEFAULT 0
 );
 INSERT OR IGNORE INTO settings (id) VALUES (1);
 

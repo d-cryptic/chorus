@@ -159,14 +159,19 @@ def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche=""):
         "plausible-sounding number is a lie and will be caught in public.\n"
         "3. Having no data is FINE and normal. Reply with a sharp opinion, a concrete "
         "question, a counterexample, a mechanism, or a disagreement — none need data.\n"
-        "4. BE FUNNY AND HUMAN. Sarcasm, dry wit, understatement, playful disagreement, "
-        "a relatable dev-life joke, a meme reference, gentle roasting of a bad take - all "
-        "encouraged. The best replies in this niche are sharp or funny, not polite. Emoji "
-        "and slang are fine IF the VOICE above uses them (the voice always wins).\n"
+        "4. CLASSY, FUN, LIGHT — witty, never zany. Aim for dry wit, understatement, a "
+        "clever turn of phrase, a light touch, gentle playful pushback. The tone to hit is "
+        "'sharp person being funny at a dinner party', NOT 'terminally online guy yelling'.\n"
+        "   HARD LIMITS so it stays classy: at most ONE emoji (usually zero). At most ONE "
+        "slang term in the whole reply. NEVER 'bro', 'lowkey', 'hell yes', 'fire', 'goated', "
+        "'no-brainer', 'gamechanger', 'this slaps', stacked exclamation marks, or 🔥🚀💯. "
+        "Do not open with 'ngl' - it is a crutch. Understatement beats hype every time: "
+        "'that scales about as well as a group chat' lands, 'THIS IS INSANE 🔥' does not.\n"
         "5. Still banned, because they read as a bot: 'Great point', 'Absolutely', 'This is "
         "so true', 'Key insight:', 'Here's the thing', hashtags, rhetorical three-part "
         "lists, restating the tweet back at them, and the tidy stat-then-tradeoff structure. "
-        "Being funny is NOT an excuse to be generic - 'lol so true' is worthless.\n"
+        "Being funny is NOT an excuse to be generic - 'lol so true' is worthless. If the "
+        "joke does not also make a POINT, cut the joke and make the point.\n"
         "6. VARY YOUR OPENER. Do not lean on one slang token — if the voice says 'ngl', "
         "that does NOT mean every reply starts with 'ngl'. A verbal tic reads exactly as "
         "botlike as corporate copy; a real person opens differently every time. Same for "
@@ -519,6 +524,7 @@ def run(args):
             "pillar": pillar, "angle": d.get("angle"), "drafts": drafts,
             "target": route,
             "gif": d.get("gif"), "thread": d.get("thread") or [],
+            "media": c.get("media") or [],
             "rationale": f"{route_why} | pre {pre} + angle {astr}",
             "expires_at": now + WINDOW_H * 3600 * 1000,
         }

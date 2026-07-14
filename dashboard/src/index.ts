@@ -127,6 +127,14 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
       return json({ settings: row });
     }
 
+    // The Worker cannot fetch tweets (no provider key, and it must not have one). The
+    // dashboard raises a flag; the box polls it every 5m and runs a real cycle.
+    if (req.method === "POST" && url.pathname === "/api/fetch") {
+      if (req.headers.get("X-Chorus") !== "1") return json({ error: "csrf" }, 400);
+      await env.DB.prepare("UPDATE settings SET fetch_now=1 WHERE id=1").run();
+      return json({ queued: true });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/insights") {
       const { results } = await env.DB.prepare(
         "SELECT kind, scope, subject_id, payload, confidence, evidence, created_at FROM insight WHERE status='active' ORDER BY confidence DESC, created_at DESC LIMIT 100"
@@ -254,6 +262,13 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       return json({ ok: true });
     }
 
+    // box: read + clear the fetch flag
+    if (req.method === "POST" && p === "/api/box/fetch-claim") {
+      const row = await env.DB.prepare("SELECT fetch_now FROM settings WHERE id=1").first<{fetch_now:number}>();
+      if (row?.fetch_now) await env.DB.prepare("UPDATE settings SET fetch_now=0 WHERE id=1").run();
+      return json({ requested: Boolean(row?.fetch_now) });
+    }
+
     if (req.method === "GET" && p === "/api/box/settings") {
       const row = await env.DB.prepare("SELECT paused, daily_ceiling_usd, quiet_hours, denylist, killed, autonomy_level FROM settings WHERE id=1").first();
       return json({ settings: row ?? { paused: 0, daily_ceiling_usd: 0.65, killed: 0, autonomy_level: "L1" } });
@@ -274,13 +289,13 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
     }
     if (req.method === "POST" && (p === "/api/box/ingest" || p === "/api/ingest")) {
       await env.DB.prepare(
-        `INSERT INTO suggestion (id, tweet_id, tweet_url, tweet_text, author_handle, author_tier, score, factors, pillar, angle, drafts, rationale, target, gif, thread, status, created_at, expires_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',?,?)
-         ON CONFLICT(tweet_id) DO UPDATE SET score=excluded.score, factors=excluded.factors, angle=excluded.angle, drafts=excluded.drafts, rationale=excluded.rationale, target=excluded.target, gif=excluded.gif, thread=excluded.thread`
+        `INSERT INTO suggestion (id, tweet_id, tweet_url, tweet_text, author_handle, author_tier, score, factors, pillar, angle, drafts, rationale, target, gif, thread, media, status, created_at, expires_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',?,?)
+         ON CONFLICT(tweet_id) DO UPDATE SET score=excluded.score, factors=excluded.factors, angle=excluded.angle, drafts=excluded.drafts, rationale=excluded.rationale, target=excluded.target, gif=excluded.gif, thread=excluded.thread, media=excluded.media`
       ).bind(b.id, b.tweet_id, b.tweet_url ?? null, b.tweet_text, b.author_handle, b.author_tier ?? null,
         b.score, JSON.stringify(b.factors ?? {}), b.pillar ?? null, b.angle ?? null,
         JSON.stringify(b.drafts ?? []), b.rationale ?? null, b.target ?? "reply",
-        b.gif ?? null, JSON.stringify(b.thread ?? []), now, b.expires_at ?? null).run();
+        b.gif ?? null, JSON.stringify(b.thread ?? []), JSON.stringify(b.media ?? []), now, b.expires_at ?? null).run();
       return json({ ok: true });
     }
     if (req.method === "POST" && (p === "/api/box/spend" || p === "/api/spend")) {

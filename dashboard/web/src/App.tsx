@@ -1,7 +1,12 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Tweet, GifChip, Counter, tweetLength, X_BLUE, DIM, LINE } from "@/components/ui/tweet";
+import { Tweet, GifChip, Counter, X_BLUE, DIM, LINE } from "@/components/ui/tweet";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { MediaGrid } from "@/components/ui/media";
+import { Toaster, toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { RefreshCw, Pause, Play, OctagonX, Activity } from "lucide-react";
+import { RefreshCw, Pause, Play, OctagonX, Activity, Download } from "lucide-react";
 
 const ME = "barundebnath";
 const REASONS = ["bad take", "bad tweet", "too late", "off-voice"];
@@ -10,7 +15,7 @@ type Sug = {
   id: string; tweet_id?: string; tweet_url?: string; tweet_text: string;
   author_handle: string; author_tier?: string; score: number; pillar?: string;
   angle?: string; drafts: string; factors?: string; target?: string;
-  gif?: string | null; thread?: string; created_at?: number;
+  gif?: string | null; thread?: string; media?: string; created_at?: number;
 };
 
 const api = (p: string) => fetch(p, { credentials: "same-origin" }).then((r) => r.json());
@@ -34,8 +39,8 @@ export default function App() {
   const [pick, setPick] = useState<Record<string, number>>({});  // per-suggestion draft index
   const [editing, setEditing] = useState<string | null>(null);
   const [dismissing, setDismissing] = useState<string | null>(null);
-  const [toast, setToast] = useState<any>(null);
   const [help, setHelp] = useState(false);
+  const [fetching, setFetching] = useState(false);
   const undoRef = useRef<any>(null);
 
   const load = useCallback(async () => {
@@ -56,8 +61,8 @@ export default function App() {
   useEffect(() => { load(); }, [load]);
 
   const flash = (msg: string, undo?: () => void) => {
-    setToast({ msg, undo }); undoRef.current = undo;
-    setTimeout(() => setToast((t: any) => (t?.msg === msg ? null : t)), 6000);
+    undoRef.current = undo ?? null;
+    toast(msg, undo ? { action: { label: "Undo (z)", onClick: () => undo() }, duration: 6000 } : { duration: 2000 });
   };
 
   const act = async (s: Sug, action: string, extra: any = {}) => {
@@ -68,7 +73,7 @@ export default function App() {
     post(`/api/suggestions/${encodeURIComponent(s.id)}/action`, body).catch(() => {});
     flash(action.replace("_", " "), async () => {
       await post(`/api/suggestions/${encodeURIComponent(s.id)}/action`, { action: "queued" }).catch(() => {});
-      setItems((x) => [s, ...x]); setToast(null);
+      setItems((x) => [s, ...x]); toast.dismiss();
     });
   };
 
@@ -111,6 +116,15 @@ export default function App() {
     return () => window.removeEventListener("keydown", h);
   }, [items, cursor, pick, editing, dismissing]);
 
+  /** The Worker has no provider key by design, so it raises a flag and the box (which
+   *  owns the keys) runs the real cycle within ~5m. */
+  const fetchNow = async () => {
+    setFetching(true);
+    await post(`/api/fetch`, {}).catch(() => {});
+    toast("Fetch queued — the box runs a cycle within ~5 min", { duration: 5000 });
+    setTimeout(() => { setFetching(false); load(); }, 90000);
+  };
+
   const setSetting = async (patch: any) => {
     const r = await post(`/api/settings`, patch).catch(() => null);
     if (r?.settings) { setCfg(r.settings); flash(Object.keys(patch)[0] + " updated"); }
@@ -123,6 +137,7 @@ export default function App() {
     : null;
 
   return (
+    <TooltipProvider delayDuration={300}>
     <div className="min-h-screen flex justify-center" style={{ background: "#000", color: "#e7e9ea" }}>
       <main className="w-full max-w-[600px]" style={{ borderLeft: `1px solid ${LINE}`, borderRight: `1px solid ${LINE}` }}>
         <header className="sticky top-0 z-10 flex items-center gap-3 px-4 h-[53px] backdrop-blur"
@@ -141,23 +156,36 @@ export default function App() {
                     title="kill-switch" className="p-2 rounded-full hover:bg-[#181818]">
               <OctagonX size={16} style={{ color: cfg?.killed ? "#f4212e" : DIM }} />
             </button>
-            <button onClick={load} title="refresh" className="p-2 rounded-full hover:bg-[#181818]">
-              <RefreshCw size={16} style={{ color: DIM }} />
-            </button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={load} className="p-2 rounded-full hover:bg-[#181818]">
+                  <RefreshCw size={16} style={{ color: DIM }} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>reload the queue</TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button onClick={fetchNow} disabled={fetching}
+                  className="ml-1 rounded-full px-3 py-1.5 text-[13px] font-bold disabled:opacity-50 flex items-center gap-1.5"
+                  style={{ background: X_BLUE, color: "#fff" }}>
+                  <Download size={13} /> {fetching ? "Fetching…" : "Fetch"}
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>pull new tweets + replies now (runs a real cycle, ~1-2 min)</TooltipContent>
+            </Tooltip>
           </div>
         </header>
 
-        <div className="flex" style={{ borderBottom: `1px solid ${LINE}` }}>
-          {["queued", "posted", "dismissed"].map((t) => (
-            <button key={t} onClick={() => setStatus(t)}
-              className="relative flex-1 h-[53px] text-[15px] capitalize transition-colors hover:bg-[#181818]"
-              style={{ color: status === t ? "#e7e9ea" : DIM, fontWeight: status === t ? 700 : 400 }}>
-              {t}{counts[t] ? ` ${counts[t]}` : ""}
-              {status === t && <span className="absolute bottom-0 left-1/2 -translate-x-1/2 h-1 rounded-full"
-                                     style={{ width: 56, background: X_BLUE }} />}
-            </button>
-          ))}
-        </div>
+        <Tabs value={status} onValueChange={setStatus}>
+          <TabsList>
+            {["queued", "posted", "dismissed"].map((t) => (
+              <TabsTrigger key={t} value={t}>
+                {t}{counts[t] ? <span className="ml-1 font-mono opacity-60">{counts[t]}</span> : null}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+        </Tabs>
 
         {blocked && <Blocked {...blocked} />}
 
@@ -165,9 +193,9 @@ export default function App() {
           : items.length === 0 && !blocked ? <Empty beat={beat} onRefresh={load} />
           : items.map((s, i) => (
               <Card key={s.id} s={s} focused={i === cursor} onFocus={() => setCursor(i)}
-                    pick={pick[s.id] ?? 0} setPick={(n) => setPick((p) => ({ ...p, [s.id]: n }))}
-                    editing={editing === s.id} setEditing={(v) => setEditing(v ? s.id : null)}
-                    dismissing={dismissing === s.id} setDismissing={(v) => setDismissing(v ? s.id : null)}
+                    pick={pick[s.id] ?? 0} setPick={(n: number) => setPick((p) => ({ ...p, [s.id]: n }))}
+                    editing={editing === s.id} setEditing={(v: boolean) => setEditing(v ? s.id : null)}
+                    dismissing={dismissing === s.id} setDismissing={(v: boolean) => setDismissing(v ? s.id : null)}
                     act={act} postOnX={postOnX} />
             ))}
         <div className="h-24" />
@@ -191,15 +219,11 @@ export default function App() {
         </div>
       </aside>
 
-      {help && <Help onClose={() => setHelp(false)} />}
-      {toast && (
-        <div className="fixed bottom-5 left-1/2 -translate-x-1/2 rounded-full px-4 py-2 text-[14px] z-50 flex items-center gap-3"
-             style={{ background: X_BLUE, color: "#fff" }}>
-          <span>{toast.msg}</span>
-          {toast.undo && <button onClick={() => { toast.undo(); }} className="font-bold underline">Undo (z)</button>}
-        </div>
-      )}
+      <Dialog open={help} onOpenChange={setHelp}><DialogContent><Help /></DialogContent></Dialog>
+      <Toaster theme="dark" position="bottom-center"
+        toastOptions={{ style: { background: "#16181c", border: `1px solid ${LINE}`, color: "#e7e9ea", borderRadius: 9999 } }} />
     </div>
+    </TooltipProvider>
   );
 }
 
@@ -236,7 +260,9 @@ function Card({ s, focused, onFocus, pick, setPick, editing, setEditing, dismiss
         </p>
       )}
 
-      <Tweet handle={s.author_handle} text={s.tweet_text} ts={s.created_at} />
+      <Tweet handle={s.author_handle} text={s.tweet_text} ts={s.created_at}>
+        <MediaGrid media={parse(s.media, [])} />
+      </Tweet>
 
       {!isRT && (
         <div style={{ borderTop: `1px solid ${LINE}` }}>
@@ -349,14 +375,14 @@ function Stat({ label, value, sub, danger }: any) {
   );
 }
 
-function Help({ onClose }: any) {
+function Help() {
   const K = [["j / k", "next / prev suggestion"], ["1 2 3", "pick draft variant"], ["p", "post on X (marks posted)"],
              ["e", "edit then post"], ["s", "snooze"], ["x", "dismiss"], ["c", "copy draft"], ["o", "open target on X"],
              ["z", "undo last action"], ["?", "this help"]];
   return (
-    <div onClick={onClose} className="fixed inset-0 z-50 grid place-items-center" style={{ background: "rgba(0,0,0,.7)" }}>
-      <div className="rounded-2xl p-6 w-[340px]" style={{ background: "#16181c", border: `1px solid ${LINE}` }}>
-        <h3 className="text-[20px] font-black mb-3">Shortcuts</h3>
+    <>
+      <DialogTitle className="text-[20px] font-black mb-3">Shortcuts</DialogTitle>
+      <div>
         {K.map(([k, d]) => (
           <div key={k} className="flex justify-between py-1 text-[14px]">
             <span className="font-mono" style={{ color: X_BLUE }}>{k}</span>
@@ -364,6 +390,6 @@ function Help({ onClose }: any) {
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }

@@ -10,6 +10,13 @@ export default {
     accent:{DEFAULT:"hsl(var(--accent))",foreground:"hsl(var(--accent-foreground))"},
     destructive:{DEFAULT:"hsl(var(--destructive))",foreground:"hsl(var(--destructive-foreground))"},
     card:{DEFAULT:"hsl(var(--card))",foreground:"hsl(var(--card-foreground))"},
-  }, borderRadius:{lg:"var(--radius)",md:"calc(var(--radius) - 2px)",sm:"calc(var(--radius) - 4px)"} } },
-  plugins: [],
+  }, borderRadius:{lg:"var(--radius)",md:"calc(var(--radius) - 2px)",sm:"calc(var(--radius) - 4px)"},
+    keyframes:{
+      "accordion-down":{from:{height:"0"},to:{height:"var(--radix-accordion-content-height)"}},
+      "fade-in":{from:{opacity:"0",transform:"translateY(2px)"},to:{opacity:"1",transform:"none"}},
+      "collapse":{from:{opacity:"1",maxHeight:"800px"},to:{opacity:"0",maxHeight:"0px"}},
+    },
+    animation:{ "fade-in":"fade-in .18s ease-out", "collapse":"collapse .16s ease-in forwards" },
+  } },
+  plugins: [require('tailwindcss-animate')],
 }
