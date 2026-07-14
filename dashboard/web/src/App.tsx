@@ -53,7 +53,14 @@ export default function App() {
   };
   const copy = (t: string) => { navigator.clipboard.writeText(t).then(() => flash("copied — post it yourself")); };
   const openReply = (s: Sug, d: string) => window.open(`https://x.com/intent/post?text=${encodeURIComponent(d)}${s.tweet_id ? `&in_reply_to=${encodeURIComponent(s.tweet_id)}` : ""}`, "_blank");
-  const loadReview = async () => setReview(review ? null : await api(`/api/review`).catch(() => ({})));
+  const loadReview = async () => {
+    if (review) { setReview(null); return; }
+    const [r, i] = await Promise.all([
+      api(`/api/review`).catch(() => ({})),
+      api(`/api/insights`).catch(() => ({ insights: [], playbook: null })),
+    ]);
+    setReview({ ...r, ...i });
+  };
 
   return (
     <div className="min-h-screen mx-auto max-w-3xl px-4 pb-24">
@@ -139,8 +146,57 @@ function ReviewPanel({ r }: { r: any }) {
           : <p className="text-xs font-mono text-muted-foreground">no data yet — act on some suggestions</p>}</div>
       {(r.weights || []).length > 0 && <div><h3 className="text-xs uppercase tracking-wide text-muted-foreground font-mono mb-2">ranking weights</h3>
         {r.weights.map((w: any) => <Row key={w.k} label={w.k} val={Number(w.v).toFixed(2)} pct={Number(w.v) / Math.max(...r.weights.map((z: any) => z.v)) * 100} />)}</div>}
+      <InsightList insights={r.insights} playbook={r.playbook} />
       {(r.reasons || []).length > 0 && <div><h3 className="text-xs uppercase tracking-wide text-muted-foreground font-mono mb-2">top dismiss reasons</h3>
         <ul className="text-xs text-muted-foreground space-y-1">{r.reasons.map((x: any) => <li key={x.k}>{x.k} <span className="text-muted-foreground/60">×{x.n}</span></li>)}</ul></div>}
     </CardContent></Card>
+  );
+}
+
+function InsightList({ insights, playbook }: { insights?: any[]; playbook?: any }) {
+  const list = insights || [];
+  const claims = list.filter((i) => parse(i.payload, {})?.state !== "insufficient_data");
+  const pending = list.length - claims.length;
+  return (
+    <div>
+      <h3 className="text-xs uppercase tracking-wide text-muted-foreground font-mono mb-2">insights</h3>
+      {claims.length === 0 ? (
+        <p className="text-xs font-mono text-muted-foreground">
+          not enough data yet{pending ? ` — ${pending} insight(s) waiting on samples` : ""}.
+          Act on suggestions (posted / edited / dismissed) and these fill in.
+        </p>
+      ) : (
+        <ul className="space-y-1.5">
+          {claims.map((i, n) => {
+            const p = parse(i.payload, {});
+            const headline =
+              p.best ? `best: ${p.best}` :
+              p.best_hour !== undefined ? `best hour: ${String(p.best_hour).padStart(2, "0")}:00` :
+              p.dominant ? `${p.dominant} (${Math.round((p.share || 0) * 100)}%)` :
+              p.verdict ? `${p.verdict} · ${p.engagement} eng` :
+              p.ranked?.[0] ? `${p.ranked[0].key}` : "—";
+            return (
+              <li key={n} className="flex items-center gap-2 text-xs font-mono">
+                <Badge className="border-border text-muted-foreground shrink-0">{i.kind}</Badge>
+                <span className="flex-1 truncate">{headline}</span>
+                <span className="text-muted-foreground shrink-0" title="confidence = n/(n+k)">
+                  conf {Number(i.confidence).toFixed(2)}
+                </span>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {playbook && (
+        <div className="mt-3">
+          <h3 className="text-xs uppercase tracking-wide text-muted-foreground font-mono mb-1">
+            playbook · {playbook.phase}
+          </h3>
+          <pre className="text-[11px] leading-relaxed bg-secondary/50 rounded-md p-2 overflow-x-auto max-h-56">
+            {JSON.stringify(parse(playbook.doc, {}), null, 1)}
+          </pre>
+        </div>
+      )}
+    </div>
   );
 }
