@@ -20,3 +20,4 @@
 # NOTE: telegram_bot.py is a long-running DAEMON (not cron) — run under systemd/pm2 when Telegram is enabled.
 # Sunday 06:00 IST — refresh the target list from your evolving network (keeps lists current)
 0 0 * * 0  cd /opt/chorus/box && python3 refresh_targets.py >> /var/log/chorus.log 2>&1
+0 5 * * *   /opt/chorus/box/run.sh python3 insights.py        >> /var/log/chorus.log 2>&1  # L1 analytics + change-gated L3 playbook

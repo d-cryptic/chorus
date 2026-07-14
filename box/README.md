@@ -127,3 +127,35 @@ Ports the v0 nakama `BudgetTracker` semantics — see `docs/v0-parity.md`.
   and is deliberately separate from the budget ceiling. Wrap any provider call with it.
 
 Rates live in `budget.RATES` (USD/unit). Unknown ops raise — never assume free.
+
+## Insights engine (`insights.py`)
+
+Ports the v0 nakama insights spec, scoped to the data Chorus actually has.
+Runs daily at 05:00 (after `outcome_track.py`).
+
+**The core property: it refuses to claim anything at low n.** v0's rules are
+"min-sample before any claim" and "zero invented numbers", so:
+- every rate is shrunk toward a prior (`shrink`: n=0 returns the PRIOR, not 0/0);
+- buckets under `MIN_SAMPLE` (5) are **excluded**, not ranked low — an unranked bucket
+  is honest, a confidently-ranked n=1 is not;
+- `confidence(n) = n/(n+k)`, so a perfect 7/7 reports ~0.41 confidence, never 1.0;
+- with no data it emits `payload.state = "insufficient_data"` and confidence 0.
+
+Note: Wilson ranking alone does NOT stop small-n overclaiming — `wilson(3/3)=0.4385`
+beats `wilson(6/8)=0.4093`. `MIN_SAMPLE` is the actual guard. Don't remove it.
+
+**Kinds emitted**: `winning_format` (pillar), `useful_account` (author),
+`best_time` (hour), `post` (per-reply verdict, only where an outcome was measured),
+`dominant_topic`. Chorus has no impressions, so v0's `eng_rate = likes/views` is not
+computable — we use raw likes+replies and say so rather than fake a rate.
+
+**Cost tiers**: L1 (all of the above) is pure arithmetic, $0. L3 (LLM playbook
+synthesis) is **change-gated** on a fingerprint of the L1 claims — an unchanged week
+costs nothing — and is additionally gated by `budget.BudgetTracker`. The synthesis
+prompt receives ONLY computed stats, never raw tweets, so there is nothing to
+hallucinate from.
+
+```bash
+python3 insights.py --dry-run   # print what would be emitted, no writes
+python3 insights.py --force     # synthesize even if nothing moved (still budget-gated)
+```

@@ -72,3 +72,32 @@ CREATE TABLE IF NOT EXISTS run_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   started_at INTEGER NOT NULL, finished_at INTEGER, suggested INTEGER, error TEXT
 );
+
+-- Typed insights (v0 nakama insights spec). Deterministic id = hash(kind|scope|subject)
+-- so a re-run SUPERSEDES rather than duplicating. confidence=0 + payload.state=
+-- 'insufficient_data' is a first-class, honest result: at low n we refuse to claim.
+CREATE TABLE IF NOT EXISTS insight (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  subject_id TEXT,
+  term TEXT,
+  payload TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0,
+  evidence TEXT,
+  status TEXT NOT NULL DEFAULT 'active',   -- active|superseded|decayed|archived
+  fingerprint TEXT,
+  created_at INTEGER NOT NULL,
+  superseded_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_insight_live ON insight(status, kind, created_at DESC);
+
+-- L3 synthesis output. Only written when the L1 fingerprint MOVED (change-gating),
+-- so a quiet week costs $0 in LLM spend.
+CREATE TABLE IF NOT EXISTS playbook (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phase TEXT NOT NULL,                     -- cold_start|traction|compounding
+  doc TEXT NOT NULL,
+  fingerprint TEXT,
+  created_at INTEGER NOT NULL
+);

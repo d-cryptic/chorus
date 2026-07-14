@@ -85,6 +85,16 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
       const row = await env.DB.prepare("SELECT started_at, finished_at, suggested, error FROM run_log ORDER BY id DESC LIMIT 1").first();
       return json({ lastRun: row ?? null });
     }
+    if (req.method === "GET" && url.pathname === "/api/insights") {
+      const { results } = await env.DB.prepare(
+        "SELECT kind, scope, subject_id, payload, confidence, evidence, created_at FROM insight WHERE status='active' ORDER BY confidence DESC, created_at DESC LIMIT 100"
+      ).all();
+      const pb = await env.DB.prepare(
+        "SELECT phase, doc, created_at FROM playbook ORDER BY created_at DESC LIMIT 1"
+      ).first();
+      return json({ insights: results, playbook: pb ?? null });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/review") {
       const [byPillar, byTier, reasons, spend, weights] = await Promise.all([
         env.DB.prepare(`SELECT s.pillar AS k, SUM(CASE WHEN f.action IN ('posted','posted_edited') THEN 1 ELSE 0 END) AS posted, COUNT(*) AS total FROM feedback f JOIN suggestion s ON s.id=f.suggestion_id GROUP BY s.pillar`).all(),
@@ -161,6 +171,47 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       ).bind(since).all();
       return json({ feedback: results });
     }
+    // Latest stored fingerprint — lets the box skip paid L3 synthesis when nothing moved.
+    if (req.method === "GET" && p === "/api/box/insights") {
+      const row = await env.DB.prepare(
+        "SELECT fingerprint FROM insight WHERE status='active' AND fingerprint IS NOT NULL ORDER BY created_at DESC LIMIT 1"
+      ).first<{ fingerprint: string }>();
+      const { results } = await env.DB.prepare(
+        "SELECT id, kind, scope, subject_id, payload, confidence, evidence, created_at FROM insight WHERE status='active' ORDER BY created_at DESC LIMIT 200"
+      ).all();
+      return json({ fingerprint: row?.fingerprint ?? null, insights: results });
+    }
+
+    if (req.method === "POST" && p === "/api/box/insights") {
+      const body = await req.json<any>().catch(() => ({}));
+      const list = Array.isArray(body?.insights) ? body.insights : [];
+      const fp = body?.fingerprint ?? null;
+      const now = Date.now();
+      // Deterministic id => a re-run replaces its own row, never duplicates (v0 rule).
+      for (const i of list) {
+        if (!i?.id || !i?.kind) continue;
+        await env.DB.prepare(
+          `INSERT INTO insight (id, kind, scope, subject_id, term, payload, confidence, evidence, status, fingerprint, created_at)
+           VALUES (?,?,?,?,?,?,?,?,'active',?,?)
+           ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, confidence=excluded.confidence,
+             evidence=excluded.evidence, status='active', fingerprint=excluded.fingerprint,
+             created_at=excluded.created_at, superseded_by=NULL`
+        ).bind(i.id, i.kind, i.scope ?? "user", i.subject_id ?? null, i.term ?? null,
+               JSON.stringify(i.payload ?? {}), Number(i.confidence ?? 0),
+               JSON.stringify(i.evidence ?? []), fp, now).run();
+      }
+      return json({ stored: list.length });
+    }
+
+    if (req.method === "POST" && p === "/api/box/playbook") {
+      const b = await req.json<any>().catch(() => ({}));
+      if (!b?.doc) return json({ error: "doc required" }, 400);
+      await env.DB.prepare(
+        "INSERT INTO playbook (phase, doc, fingerprint, created_at) VALUES (?,?,?,?)"
+      ).bind(b.phase ?? "cold_start", JSON.stringify(b.doc), b.fingerprint ?? null, Date.now()).run();
+      return json({ ok: true });
+    }
+
     if (req.method === "GET" && p === "/api/box/settings") {
       const row = await env.DB.prepare("SELECT paused, daily_ceiling_usd, quiet_hours, denylist, killed, autonomy_level FROM settings WHERE id=1").first();
       return json({ settings: row ?? { paused: 0, daily_ceiling_usd: 0.65, killed: 0, autonomy_level: "L1" } });
