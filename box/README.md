@@ -108,7 +108,7 @@ See [../docs/runbook-deploy.md](../docs/runbook-deploy.md) — the live wiring y
 
 ## Budget guard, kill-switch, autonomy (`budget.py`)
 
-Ports the v0 nakama `BudgetTracker` semantics — see `docs/v0-parity.md`.
+Ports the v0 nakama `BudgetTracker` semantics — see [`docs/v0-parity.md`](../docs/v0-parity.md).
 
 - **`would_exceed` before every paid call.** `ranker.py` re-checks the ceiling before
   each LLM draft, so a long cycle cannot blow the budget mid-run (it used to be checked

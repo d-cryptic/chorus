@@ -2,7 +2,8 @@ import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Copy, ExternalLink, Check, Pencil, Clock, X, RefreshCw, BarChart3, Activity } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Copy, ExternalLink, Check, Pencil, Clock, X, RefreshCw, BarChart3, Activity, Pause, Play, OctagonX } from "lucide-react";
 
 type Sug = {
   id: string; tweet_id?: string; tweet_url?: string; tweet_text: string;
@@ -25,14 +26,17 @@ export default function App() {
   const [err, setErr] = useState("");
   const [toast, setToast] = useState("");
   const [review, setReview] = useState<any>(null);
+  const [cfg, setCfg] = useState<any>(null);
   const flash = (m: string) => { setToast(m); setTimeout(() => setToast(""), 1500); };
 
   const load = useCallback(async () => {
     setLoading(true); setErr("");
     try {
-      const [sg, sp, st] = await Promise.all([
+      const [sg, sp, st, cf] = await Promise.all([
         api(`/api/suggestions?status=${status}`), api(`/api/spend`).catch(() => ({ total: 0 })), api(`/api/status`).catch(() => ({ lastRun: null })),
+        api(`/api/settings`).catch(() => ({ settings: null })),
       ]);
+      setCfg(cf.settings || null);
       setItems(sg.suggestions || []); setSpend(Number(sp.total) || 0);
       const r = st.lastRun;
       setBeat(r?.started_at ? `${Math.round((Date.now() - r.started_at) / 3.6e6)}h ago · ${r.suggested ?? 0} suggested${r.error ? " · ERROR" : ""}` : "no cycle yet");
@@ -49,6 +53,16 @@ export default function App() {
     try {
       await fetch(`/api/suggestions/${encodeURIComponent(s.id)}/action`, { method: "POST", credentials: "same-origin", headers: { "content-type": "application/json", "X-Chorus": "1" }, body: JSON.stringify(body) });
       setItems((x) => x.filter((i) => i.id !== s.id)); flash(action);
+    } catch { flash("failed"); }
+  };
+  const setSetting = async (patch: any) => {
+    try {
+      const r = await fetch(`/api/settings`, {
+        method: "POST", credentials: "same-origin",
+        headers: { "content-type": "application/json", "X-Chorus": "1" },
+        body: JSON.stringify(patch),
+      }).then((x) => x.json());
+      setCfg(r.settings); flash(Object.keys(patch)[0] + " updated");
     } catch { flash("failed"); }
   };
   const copy = (t: string) => { navigator.clipboard.writeText(t).then(() => flash("copied — post it yourself")); };
@@ -69,11 +83,35 @@ export default function App() {
         <span className="text-xs text-muted-foreground font-mono flex items-center gap-1"><Activity size={12} /> {beat}</span>
         <div className="ml-auto flex items-center gap-3">
           <span className="text-xs font-mono text-muted-foreground">spend <span className="text-primary">${spend.toFixed(2)}</span></span>
+          {cfg && (
+            <>
+              <Button variant="ghost" size="icon" title={cfg.paused ? "resume agent" : "pause agent (soft, resumable)"}
+                onClick={() => setSetting({ paused: !cfg.paused })}>
+                {cfg.paused ? <Play size={16} className="text-amber-400" /> : <Pause size={16} />}
+              </Button>
+              <Button variant="ghost" size="icon"
+                title={cfg.killed ? "kill-switch is ON — nothing will run. Click to release." : "KILL: stop every paid call immediately"}
+                onClick={() => {
+                  if (!cfg.killed && !confirm("Kill-switch: halt every paid call immediately?\n(beats pause and any remaining budget)")) return;
+                  setSetting({ killed: !cfg.killed });
+                }}>
+                <OctagonX size={16} className={cfg.killed ? "text-destructive" : ""} />
+              </Button>
+            </>
+          )}
           <Button variant="ghost" size="icon" onClick={loadReview} title="review"><BarChart3 size={16} /></Button>
           <Button variant="ghost" size="icon" onClick={load} title="refresh"><RefreshCw size={16} /></Button>
         </div>
       </header>
 
+      {cfg && (cfg.killed || cfg.paused) && (
+        <div className={cn("mt-3 rounded-md border px-3 py-2 text-xs font-mono",
+          cfg.killed ? "border-destructive/50 text-destructive" : "border-amber-500/40 text-amber-400")}>
+          {cfg.killed
+            ? "KILL-SWITCH ON — no cycles, no spend. Nothing new will appear until released."
+            : "PAUSED — cycles are stopped (resumable). Budget untouched."}
+        </div>
+      )}
       <div className="flex gap-1.5 py-4">
         {["queued", "posted", "dismissed"].map((s) => (
           <Button key={s} size="sm" variant={status === s ? "secondary" : "ghost"} onClick={() => setStatus(s)} className="capitalize">{s}</Button>

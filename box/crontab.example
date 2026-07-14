@@ -4,7 +4,7 @@
 # sourced env file or Doppler:  e.g.  */... doppler run -- python3 /opt/chorus/box/ranker.py ...
 
 # 08:00 IST — rank today's candidates into the queue (local adapter)
-30 2 * * *  cd /opt/chorus/box && python3 ranker.py >> /var/log/chorus.log 2>&1
+30 2 * * *  cd /opt/chorus/box && python3 ranker.py --pages 1 >> /var/log/chorus.log 2>&1
 # 08:05 IST — Telegram digest + heartbeat
 35 2 * * *  cd /opt/chorus/box && python3 digest.py >> /var/log/chorus.log 2>&1
 # every 30 min — mirror new feedback (accept/reject) into Supermemory chorus:self

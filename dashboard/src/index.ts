@@ -85,6 +85,37 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
       const row = await env.DB.prepare("SELECT started_at, finished_at, suggested, error FROM run_log ORDER BY id DESC LIMIT 1").first();
       return json({ lastRun: row ?? null });
     }
+    // Human control surface for the safety switches. Without this the kill-switch is
+    // only reachable via raw SQL, which makes it useless in the moment you need it.
+    if (req.method === "GET" && url.pathname === "/api/settings") {
+      const row = await env.DB.prepare(
+        "SELECT paused, killed, daily_ceiling_usd, quiet_hours, denylist, autonomy_level FROM settings WHERE id=1"
+      ).first();
+      return json({ settings: row ?? {} });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/settings") {
+      if (req.headers.get("X-Chorus") !== "1") return json({ error: "csrf" }, 400);
+      const b = await req.json<any>().catch(() => ({}));
+      const sets: string[] = [];
+      const vals: any[] = [];
+      if (b.paused !== undefined) { sets.push("paused=?"); vals.push(b.paused ? 1 : 0); }
+      if (b.killed !== undefined) { sets.push("killed=?"); vals.push(b.killed ? 1 : 0); }
+      if (b.daily_ceiling_usd !== undefined) {
+        const v = Number(b.daily_ceiling_usd);
+        if (!Number.isFinite(v) || v < 0 || v > 100) return json({ error: "ceiling must be 0..100" }, 400);
+        sets.push("daily_ceiling_usd=?"); vals.push(v);
+      }
+      if (b.quiet_hours !== undefined) { sets.push("quiet_hours=?"); vals.push(b.quiet_hours || null); }
+      if (b.denylist !== undefined) { sets.push("denylist=?"); vals.push(b.denylist || null); }
+      if (!sets.length) return json({ error: "nothing to update" }, 400);
+      await env.DB.prepare(`UPDATE settings SET ${sets.join(", ")} WHERE id=1`).bind(...vals).run();
+      const row = await env.DB.prepare(
+        "SELECT paused, killed, daily_ceiling_usd, quiet_hours, denylist FROM settings WHERE id=1"
+      ).first();
+      return json({ settings: row });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/insights") {
       const { results } = await env.DB.prepare(
         "SELECT kind, scope, subject_id, payload, confidence, evidence, created_at FROM insight WHERE status='active' ORDER BY confidence DESC, created_at DESC LIMIT 100"
