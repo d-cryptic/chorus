@@ -159,3 +159,38 @@ hallucinate from.
 python3 insights.py --dry-run   # print what would be emitted, no writes
 python3 insights.py --force     # synthesize even if nothing moved (still budget-gated)
 ```
+
+## Generation: router, caps, judge (`generate.py`)
+
+Ports the v0 nakama generation decision layer. Chorus stays **suggest-only**: every
+route produces a draft/decision row for you, never a post (v0's G5-publish is dropped).
+
+**The Router** (v0 calls it "the spine") decides the target per candidate. Split in two
+to respect the two-stage budget design:
+- `route_pre()` — cheap, pre-LLM. Drops only what is clearly not ours (no pillar, no
+  mutual, low-value author) *before* we pay for a draft. Deliberately conservative:
+  a wrongly-dropped candidate is invisible, so we bias toward spending ~$0.0003 to look.
+- `route_post()` — uses `angle_strength`, which the draft call **already returns**, so
+  reply/quote/retweet costs **zero extra LLM calls**:
+  - `angle >= 0.70` -> **quote** (a distinct take deserves its own post)
+  - `angle <= 0.25` -> **retweet** if on-pillar AND tier A/B (nothing to add, worth
+    amplifying), else **drop**. Retweet rows carry NO drafts, just a rationale.
+  - otherwise -> **reply** (the default)
+
+**Anti-spam caps** (`CapState`): per-day, per-author/day (2), and a 6h cooldown between
+replies to the same author. Cooldown reads prior queue history, not just this cycle, and
+caps are checked *before* paying for a draft.
+
+**G3 judge**: scores `voice_match` / `contract` / `grounded` (0..1); anything below 0.5
+fails -> **demote + exactly one regenerate**. It never discards work: a judge error or
+missing score counts as a PASS. Live-verified to catch an invented statistic
+(`grounded: 0.1`) and off-voice hype (`voice_match: 0.1`) at ~$0.0002/judgement.
+Disable with `--no-judge`.
+
+**Voice priming** (`ranker.voice_context`): pulls your stored voice from the memory
+service. NOTE: v0 does true semantic RAG over your own past posts — Chorus cannot yet
+(chorus:self holds style docs, not a post corpus, and the store is keyword-only), so it
+tries a topic match then falls back to the voice docs. Honest priming, not fake RAG.
+
+**Zero candidates now ALERTS** rather than silently no-opping — an out-of-credit
+provider (402) drops every query and would otherwise look like "a quiet day" forever.
