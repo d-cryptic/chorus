@@ -222,3 +222,34 @@ the STRUCTURAL moves that earn replies (hook shapes, reply-bait, what winners av
 `chorus:niche` -> fed to the drafter. HARD BOUNDARY: patterns only, never content —
 Chorus must never launder someone else's claims into your mouth. Your voice always wins;
 if a pattern fights the voice, the pattern is dropped.
+
+## Source model: your timeline + targets
+
+twitterapi.io is **X-API-Key only with no home-timeline endpoint**, so the timeline is
+**reconstructed** from your following list (`refresh_targets` emits a capped, filtered
+`timeline` handle list). Same tweets, minus X's ranking — and no account session, which
+this project forbids. Topic-discovery is **opt-in** (`CHORUS_DISCOVERY=1`): live testing
+showed it is dominated by crypto spam and costs an extra query.
+
+**Cost (measured):** 100k credits = $1; a tweet = 15 credits; min 15/request.
+timeline(120)+targets ≈ 200 candidates/cycle. `candidate_source.balance()` is checked
+pre-flight — 0 credits stops the cycle with an alert (the USD ceiling can't see credits).
+
+## Humour, gifs, threads
+
+The drafter is **bullish on sarcasm, dry wit, memes and relatable jokes** — the best
+replies in this niche are sharp or funny, not polite. Emoji/slang are allowed *if the
+learned voice uses them* (an earlier prompt banned emoji while the voice doc said the
+opposite — the prompt was fighting the voice).
+
+Still banned, because they read as a bot: "Great point", "Absolutely", "Key insight:",
+tricolons, restating the tweet. **And tics**: live output opened 4/5 drafts with "ngl", so
+the prompt now forces a different opener per draft — a verbal tic reads as botlike as
+corporate copy.
+
+- **`gif`**: a Giphy SEARCH phrase (v0 spec: search, never generate), rendered as a chip
+  linking to Giphy. Null when a gif would be try-hard.
+- **`thread`**: only when the take genuinely needs >280 chars — never padding.
+- **`style_mine --mode replies`** mines high-engagement **comments** aimed at your targets
+  (`filter:replies`) — the thing you actually compete with — into `chorus:niche:replies`,
+  which the drafter prefers over post-patterns. Patterns only, never content.

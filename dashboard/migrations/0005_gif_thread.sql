@@ -1,0 +1,2 @@
+ALTER TABLE suggestion ADD COLUMN gif TEXT;
+ALTER TABLE suggestion ADD COLUMN thread TEXT;

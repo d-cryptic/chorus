@@ -2,6 +2,7 @@ import { useEffect, useState, useCallback } from "react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Tweet, tweetLength } from "@/components/ui/tweet";
 import { cn } from "@/lib/utils";
 import { Copy, ExternalLink, Check, Pencil, Clock, X, RefreshCw, BarChart3, Activity, Pause, Play, OctagonX } from "lucide-react";
 
@@ -16,6 +17,8 @@ const parse = (x: any, f: any) => { try { return typeof x === "string" ? JSON.pa
 function Toast({ msg }: { msg: string }) {
   return <div className="fixed bottom-5 left-1/2 -translate-x-1/2 rounded-md border bg-card px-4 py-2 text-sm text-primary shadow-lg z-50">{msg}</div>;
 }
+
+const ME = "barundebnath";
 
 export default function App() {
   const [status, setStatus] = useState("queued");
@@ -104,7 +107,7 @@ export default function App() {
         </div>
       </header>
 
-      {cfg && (cfg.killed || cfg.paused) && (
+      {cfg && Boolean(cfg.killed || cfg.paused) && (
         <div className={cn("mt-3 rounded-md border px-3 py-2 text-xs font-mono",
           cfg.killed ? "border-destructive/50 text-destructive" : "border-amber-500/40 text-amber-400")}>
           {cfg.killed
@@ -127,38 +130,58 @@ export default function App() {
             {items.map((s) => {
               const drafts: string[] = parse(s.drafts, []);
               const url = s.tweet_url || (s.tweet_id ? `https://x.com/i/web/status/${s.tweet_id}` : null);
+              const me = ME;
               return (
-                <Card key={s.id} className="overflow-hidden">
-                  <CardContent className="space-y-3">
-                    <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground flex-wrap">
-                      <Badge className="border-primary/40 text-primary bg-primary/10 font-semibold">{s.score.toFixed(2)}</Badge>
-                      <span className="text-foreground">@{s.author_handle}</span>
-                      {s.author_tier && <Badge className="border-border text-muted-foreground">tier {s.author_tier}</Badge>}
-                      {s.pillar && <Badge className="border-border text-muted-foreground">{s.pillar}</Badge>}
-                      {url && <a href={url} target="_blank" className="ml-auto inline-flex items-center gap-1 hover:text-foreground">view <ExternalLink size={11} /></a>}
-                    </div>
-                    <p className="text-sm leading-relaxed">{s.tweet_text}</p>
-                    {s.angle && <p className="text-xs font-mono text-amber-300/90">▸ {s.angle}</p>}
-                    <div className="space-y-2">
-                      {drafts.map((d, i) => (
-                        <div key={i} className="flex items-start gap-2 rounded-md bg-secondary/50 p-2.5">
-                          <p className="text-sm flex-1 leading-relaxed">{d}</p>
-                          <div className="flex gap-1 shrink-0">
-                            <Button variant="ghost" size="icon" title="copy" onClick={() => copy(d)}><Copy size={14} /></Button>
-                            <Button variant="ghost" size="icon" title="open reply" onClick={() => openReply(s, d)}><ExternalLink size={14} /></Button>
-                          </div>
+                <Card key={s.id} className="overflow-hidden border-[#2f3336] bg-black p-0">
+                  {/* meta strip — Chorus's own signal, kept outside the X-accurate render */}
+                  <div className="flex items-center gap-2 text-xs font-mono text-muted-foreground flex-wrap px-4 pt-3">
+                    <Badge className="border-primary/40 text-primary bg-primary/10 font-semibold">{s.score.toFixed(2)}</Badge>
+                    <Badge className="border-border text-muted-foreground capitalize">{s.target || "reply"}</Badge>
+                    {s.author_tier && <Badge className="border-border text-muted-foreground">tier {s.author_tier}</Badge>}
+                    {s.pillar && <Badge className="border-border text-muted-foreground">{s.pillar}</Badge>}
+                    {url && <a href={url} target="_blank" className="ml-auto inline-flex items-center gap-1 hover:text-foreground">on X <ExternalLink size={11} /></a>}
+                  </div>
+
+                  {/* THEIR tweet — exactly as it appears on X */}
+                  <Tweet handle={s.author_handle} text={s.tweet_text} />
+
+                  {s.angle && <p className="text-xs font-mono text-amber-300/90 px-4 pt-2">▸ {s.angle}</p>}
+
+                  {/* YOUR drafts — rendered as the reply will actually look */}
+                  {drafts.map((d, i) => (
+                    <Tweet
+                      key={i}
+                      handle={me}
+                      text={d}
+                      replyingTo={s.author_handle}
+                      gif={i === 0 ? s.gif : null}
+                      isDraft
+                      footer={
+                        <div className="flex gap-1">
+                          <Button variant="ghost" size="icon" title="copy" onClick={() => copy(d)}><Copy size={14} /></Button>
+                          <Button variant="ghost" size="icon" title="open reply on X" onClick={() => openReply(s, d)}><ExternalLink size={14} /></Button>
                         </div>
+                      }
+                    />
+                  ))}
+
+                  {/* thread continuation, if the take needed one */}
+                  {parse(s.thread, []).length > 0 && (
+                    <div className="border-l-2 border-[#2f3336] ml-6">
+                      {parse(s.thread, []).map((t: string, i: number) => (
+                        <Tweet key={i} handle={me} text={t} isDraft />
                       ))}
                     </div>
-                    {status === "queued" && (
-                      <div className="flex gap-1.5 pt-1 flex-wrap">
-                        <Button size="sm" onClick={() => act(s, "posted")}><Check size={14} /> posted</Button>
-                        <Button size="sm" variant="outline" onClick={() => act(s, "posted_edited")}><Pencil size={14} /> edited</Button>
-                        <Button size="sm" variant="ghost" onClick={() => act(s, "snoozed")}><Clock size={14} /> snooze</Button>
-                        <Button size="sm" variant="destructive" onClick={() => act(s, "dismissed")}><X size={14} /> dismiss</Button>
-                      </div>
-                    )}
-                  </CardContent>
+                  )}
+
+                  {status === "queued" && (
+                    <div className="flex gap-1.5 flex-wrap px-4 py-3">
+                      <Button size="sm" onClick={() => act(s, "posted")}><Check size={14} /> posted</Button>
+                      <Button size="sm" variant="outline" onClick={() => act(s, "posted_edited")}><Pencil size={14} /> edited</Button>
+                      <Button size="sm" variant="ghost" onClick={() => act(s, "snoozed")}><Clock size={14} /> snooze</Button>
+                      <Button size="sm" variant="destructive" onClick={() => act(s, "dismissed")}><X size={14} /> dismiss</Button>
+                    </div>
+                  )}
                 </Card>
               );
             })}

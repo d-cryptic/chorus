@@ -263,12 +263,13 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
     }
     if (req.method === "POST" && (p === "/api/box/ingest" || p === "/api/ingest")) {
       await env.DB.prepare(
-        `INSERT INTO suggestion (id, tweet_id, tweet_url, tweet_text, author_handle, author_tier, score, factors, pillar, angle, drafts, rationale, target, status, created_at, expires_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',?,?)
-         ON CONFLICT(tweet_id) DO UPDATE SET score=excluded.score, factors=excluded.factors, angle=excluded.angle, drafts=excluded.drafts, rationale=excluded.rationale, target=excluded.target`
+        `INSERT INTO suggestion (id, tweet_id, tweet_url, tweet_text, author_handle, author_tier, score, factors, pillar, angle, drafts, rationale, target, gif, thread, status, created_at, expires_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',?,?)
+         ON CONFLICT(tweet_id) DO UPDATE SET score=excluded.score, factors=excluded.factors, angle=excluded.angle, drafts=excluded.drafts, rationale=excluded.rationale, target=excluded.target, gif=excluded.gif, thread=excluded.thread`
       ).bind(b.id, b.tweet_id, b.tweet_url ?? null, b.tweet_text, b.author_handle, b.author_tier ?? null,
         b.score, JSON.stringify(b.factors ?? {}), b.pillar ?? null, b.angle ?? null,
-        JSON.stringify(b.drafts ?? []), b.rationale ?? null, b.target ?? "reply", now, b.expires_at ?? null).run();
+        JSON.stringify(b.drafts ?? []), b.rationale ?? null, b.target ?? "reply",
+        b.gif ?? null, JSON.stringify(b.thread ?? []), now, b.expires_at ?? null).run();
       return json({ ok: true });
     }
     if (req.method === "POST" && (p === "/api/box/spend" || p === "/api/spend")) {

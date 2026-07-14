@@ -17,6 +17,9 @@ CREATE TABLE IF NOT EXISTS suggestion (
   -- router decision (v0 'the spine'): reply | quote | retweet. A retweet row
   -- carries NO drafts - just a rationale for why it is worth amplifying.
   target         TEXT NOT NULL DEFAULT 'reply',
+  gif            TEXT,                          -- Giphy SEARCH phrase (v0: search, never generate)
+  thread         TEXT,                          -- JSON array; only when the take needs >280 chars
+
   status         TEXT NOT NULL DEFAULT 'queued', -- queued|posted|dismissed|snoozed|expired
   created_at     INTEGER NOT NULL,
   expires_at     INTEGER,
