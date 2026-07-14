@@ -27,7 +27,8 @@ CREATE TABLE IF NOT EXISTS suggestion (
   acted_at       INTEGER,
   final_text     TEXT,                           -- what you actually posted (for voice edit-diff)
   posted_url     TEXT,                           -- URL of the reply you posted (for outcome-track)
-  dismiss_reason TEXT
+  dismiss_reason TEXT,
+  draft_index    INTEGER            -- which of the 2-3 drafts you actually picked
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_suggestion_tweet ON suggestion(tweet_id); -- F8: no dupes
 CREATE INDEX IF NOT EXISTS idx_suggestion_status_score ON suggestion(status, score DESC);

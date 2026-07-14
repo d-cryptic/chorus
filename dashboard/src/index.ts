@@ -21,6 +21,7 @@ const json = (d: unknown, s = 200) =>
 
 const STATUS: Record<string, string> = {
   posted: "posted", posted_edited: "posted", dismissed: "dismissed", snoozed: "snoozed",
+  queued: "queued",   // UNDO: an action is irreversible without this; the UI offers "Undo (z)"
 };
 const localDay = (o = 330) => new Date(Date.now() + o * 60000).toISOString().slice(0, 10); // IST
 
@@ -78,7 +79,12 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
              AND (expires_at IS NULL OR expires_at > ?2)
            ORDER BY score DESC LIMIT ?3`
       ).bind(status, now, limit).all();
-      return json({ suggestions: results });
+      const { results: cRows } = await env.DB.prepare(
+        "SELECT status, COUNT(*) n FROM suggestion GROUP BY status"
+      ).all<{ status: string; n: number }>();
+      const counts: Record<string, number> = {};
+      for (const r of cRows) counts[r.status] = r.n;
+      return json({ suggestions: results, counts });
     }
     if (req.method === "GET" && url.pathname === "/api/spend") return json(await spendToday(env));
     if (req.method === "GET" && url.pathname === "/api/status") {
@@ -151,8 +157,8 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
       const now = Date.now();
       const snooze = b.action === "snoozed" ? now + (b.snooze_hours ?? 2) * 3600_000 : null;
       const res = await env.DB.prepare(
-        "UPDATE suggestion SET status=?, acted_at=?, snooze_until=?, final_text=COALESCE(?,final_text), posted_url=COALESCE(?,posted_url), dismiss_reason=COALESCE(?,dismiss_reason) WHERE id=?"
-      ).bind(st, now, snooze, b.final_text ?? null, (b as any).posted_url ?? null, b.reason ?? null, id).run();
+        "UPDATE suggestion SET status=?, acted_at=?, snooze_until=?, final_text=COALESCE(?,final_text), posted_url=COALESCE(?,posted_url), dismiss_reason=COALESCE(?,dismiss_reason), draft_index=COALESCE(?,draft_index) WHERE id=?"
+      ).bind(st, now, snooze, b.final_text ?? null, (b as any).posted_url ?? null, b.reason ?? null, (b as any).draft_index ?? null, id).run();
       if (!res.meta.changes) return json({ error: "not found" }, 404);
       await env.DB.prepare("INSERT INTO feedback (suggestion_id, action, final_text, reason, ts) VALUES (?,?,?,?,?)")
         .bind(id, b.action, b.final_text ?? null, b.reason ?? null, now).run();
@@ -259,8 +265,8 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       if (!st) return json({ error: "bad action" }, 400);
       const snooze = b.action === "snoozed" ? now + (b.snooze_hours ?? 2) * 3600_000 : null;
       const r = await env.DB.prepare(
-        "UPDATE suggestion SET status=?, acted_at=?, snooze_until=?, final_text=COALESCE(?,final_text), posted_url=COALESCE(?,posted_url), dismiss_reason=COALESCE(?,dismiss_reason) WHERE id=?"
-      ).bind(st, now, snooze, b.final_text ?? null, b.posted_url ?? null, b.reason ?? null, b.id).run();
+        "UPDATE suggestion SET status=?, acted_at=?, snooze_until=?, final_text=COALESCE(?,final_text), posted_url=COALESCE(?,posted_url), dismiss_reason=COALESCE(?,dismiss_reason), draft_index=COALESCE(?,draft_index) WHERE id=?"
+      ).bind(st, now, snooze, b.final_text ?? null, b.posted_url ?? null, b.reason ?? null, b.draft_index ?? null, b.id).run();
       if (!r.meta.changes) return json({ error: "not found" }, 404);
       await env.DB.prepare("INSERT INTO feedback (suggestion_id, action, final_text, reason, ts) VALUES (?,?,?,?,?)")
         .bind(b.id, b.action, b.final_text ?? null, b.reason ?? null, now).run();
