@@ -1,0 +1,14 @@
+title = "Chorus gitleaks config"
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Benign: lockfile integrity hashes and placeholder tokens only. NOT allowlisting *.example (that's where accidental keys land)."
+paths = [
+  '''.*\.terraform\.lock\.hcl$''',
+  '''.*package-lock\.json$''',
+]
+regexes = [
+  '''REPLACE[A-Z_]*''',
+  '''\$\{[A-Z_]+\}''',
+]

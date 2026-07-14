@@ -1,0 +1,28 @@
+# Copy to terraform.tfvars (git-ignored) and fill in. Secrets go via env, not here.
+account_id = "REPLACE_WITH_CLOUDFLARE_ACCOUNT_ID"
+
+# zone_name defaults to "barundebnath.com" (zone_id auto-looked-up via data source).
+# Hostnames default to:
+#   chorus-hermes.barundebnath.com   (agent UI, tunnel + Access)
+#   chorus-app.barundebnath.com      (dashboard, Access)
+#   chorus-ssh.barundebnath.com      (Cloudflare-gated SSH)
+# access_emails defaults to ["barundebnath91@gmail.com"] — the single owner gate.
+
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+# ssh_source_ips    = ["203.0.113.4/32"]   # your IP/32 for bootstrap SSH
+# enable_public_ssh = false                 # flip after gated SSH works → tunnel-only
+
+# server_type = "cax11"   # 4GB ARM; "cax21" (8GB) if browser-use is heavy
+# location    = "fsn1"     # ARM: fsn1 / nbg1 / hel1
+# hermes_ui_port = 3000    # VERIFY against Hermes docs
+# hermes_install_cmd = "curl -fsSL <official-hermes-install> | sh"
+# use_doppler     = true            # pull secrets from Doppler at runtime (keeps them out of TF state)
+# doppler_token   = "dp.st.xxx"     # via TF_VAR_doppler_token
+# healthcheck_url = "https://hc-ping.com/xxx"   # box pings every 15m (liveness)
+
+# --- Secrets: prefer env over this file ---
+#   export TF_VAR_tunnel_secret=$(openssl rand -base64 32)
+#   export TF_VAR_openrouter_api_key=...  TF_VAR_supermemory_api_key=...
+#   export TF_VAR_candidate_api_key=...      TF_VAR_firecrawl_api_key=...
+#   export HCLOUD_TOKEN=...  CLOUDFLARE_API_TOKEN=...
+#   export AWS_ACCESS_KEY_ID=...  AWS_SECRET_ACCESS_KEY=...   # R2 state backend

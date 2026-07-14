@@ -1,0 +1,66 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chorus — weekly review</title>
+<style>
+  :root{--bg:#000;--panel:#0c0c0d;--border:#262628;--rule:#3a3a3d;--fg:#f2f2f2;--muted:#8a8a8a;
+    --faint:#646467;--green:#7ec699;--sage:#a8c8a4;--tan:#c9b07e;--maroon:#b06a6a;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans)}
+  header{border-bottom:1px solid var(--rule);padding:16px 24px;display:flex;gap:16px;align-items:baseline}
+  header h1{font-size:16px;font-weight:800;margin:0}header a{color:var(--green);font-family:var(--mono);font-size:12px;text-decoration:none;border-bottom:1px solid var(--border)}
+  main{max-width:820px;margin:0 auto;padding:24px}
+  section{border:1px solid var(--border);border-radius:6px;background:var(--panel);padding:18px 20px;margin:0 0 18px}
+  h2{font-size:13px;font-family:var(--mono);text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:0 0 14px}
+  .row{display:grid;grid-template-columns:130px 1fr 60px;gap:10px;align-items:center;margin:6px 0;font-family:var(--mono);font-size:12px}
+  .row .lbl{color:var(--muted);text-align:right;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .bar{height:16px;border-radius:2px;background:var(--sage);min-width:2px}
+  .val{color:var(--fg)}
+  .spark{display:flex;gap:6px;align-items:flex-end;height:60px}
+  .spark .b{flex:1;background:var(--tan);border-radius:2px 2px 0 0;min-height:2px}
+  .spark .d{font-family:var(--mono);font-size:9px;color:var(--faint);text-align:center;margin-top:4px}
+  ul{margin:0;padding-left:18px;font-size:13px;color:var(--muted)}li{margin:4px 0}
+  .empty{font-family:var(--mono);color:var(--faint);font-size:12px}
+</style></head>
+<body>
+<header><h1>Chorus · weekly review</h1><a href="/">← queue</a></header>
+<main id="main"><section class="empty">loading…</section></main>
+<script>
+const pct=(p,t)=>t?Math.round(100*p/t):0;
+async function load(){
+  const m=document.getElementById("main");
+  try{
+    const r=await fetch("/api/review").then(r=>r.json());
+    m.innerHTML=[
+      accSection("acceptance by pillar", r.byPillar),
+      accSection("acceptance by author tier", r.byTier),
+      weightsSection(r.weights),
+      spendSection(r.spend),
+      reasonsSection(r.reasons),
+    ].join("");
+  }catch(e){m.innerHTML=`<section class="empty">failed — ${e}</section>`;}
+}
+function accSection(title, rows){
+  rows=(rows||[]).filter(x=>x.k!=null&&x.total>0);
+  if(!rows.length)return `<section><h2>${title}</h2><div class="empty">no data yet — act on some suggestions</div></section>`;
+  return `<section><h2>${title}</h2>${rows.map(x=>{const p=pct(x.posted,x.total);
+    return `<div class="row"><span class="lbl">${esc(x.k)}</span><div class="bar" style="width:${p}%"></div><span class="val">${p}% · ${x.posted}/${x.total}</span></div>`;}).join("")}</section>`;
+}
+function weightsSection(w){
+  w=w||[];if(!w.length)return `<section><h2>current ranking weights</h2><div class="empty">defaults (rank-tune hasn't run yet)</div></section>`;
+  const max=Math.max(...w.map(x=>x.v));
+  return `<section><h2>current ranking weights (rank-tune output)</h2>${w.map(x=>
+    `<div class="row"><span class="lbl">${esc(x.k)}</span><div class="bar" style="width:${Math.round(100*x.v/max)}%"></div><span class="val">${x.v.toFixed(2)}</span></div>`).join("")}</section>`;
+}
+function spendSection(s){
+  s=(s||[]).slice().reverse();if(!s.length)return `<section><h2>spend · last 7 days</h2><div class="empty">no spend recorded</div></section>`;
+  const max=Math.max(...s.map(x=>x.usd),0.01);
+  return `<section><h2>spend · last 7 days</h2><div class="spark">${s.map(x=>
+    `<div><div class="b" style="height:${Math.round(56*x.usd/max)}px" title="$${x.usd.toFixed(2)}"></div><div class="d">${esc(x.k).slice(5)}</div></div>`).join("")}</div></section>`;
+}
+function reasonsSection(r){
+  r=(r||[]);if(!r.length)return `<section><h2>top dismiss reasons</h2><div class="empty">none</div></section>`;
+  return `<section><h2>top dismiss reasons</h2><ul>${r.map(x=>`<li>${esc(x.k)} <span style="color:var(--faint)">×${x.n}</span></li>`).join("")}</ul></section>`;
+}
+const esc=s=>(s??"").toString().replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+load();
+</script></body></html>

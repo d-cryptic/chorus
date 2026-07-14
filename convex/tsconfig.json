@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "esnext", "module": "esnext", "moduleResolution": "bundler",
+    "strict": true, "skipLibCheck": true, "noEmit": true,
+    "types": ["node"], "lib": ["esnext"]
+  },
+  "include": ["**/*.ts"],
+  "exclude": ["node_modules"]
+}

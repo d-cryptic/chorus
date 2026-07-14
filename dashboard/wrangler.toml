@@ -1,0 +1,27 @@
+name = "chorus-dashboard"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+
+# F1: never expose the API on the ungated workers.dev URL. Custom domain (Access-gated) only.
+workers_dev = false
+
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "chorus"
+database_id = "REPLACE_AFTER_d1_create"
+
+[vars]
+ALLOWED_EMAIL = "barundebnath91@gmail.com"
+# F2: Access team domain + AUD for JWT verification (set real values; see infra outputs).
+ACCESS_TEAM_DOMAIN = "REPLACE"
+ACCESS_AUD = "REPLACE"
+# F4: bearer secret the Hermes box uses to write the queue. Set via `wrangler secret put INGEST_TOKEN`
+# (NOT here) and drop the same value into /etc/hermes/hermes.env.
+# DEV_OPEN = "1"  # uncomment ONLY for local `wrangler dev` (skips the identity check)
+
+[triggers]
+crons = ["*/30 * * * *"]   # expiry sweep (F8)

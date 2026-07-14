@@ -1,0 +1,22 @@
+# Chorus M0 cron (box). The daily cycle is just these scripts — no HTTP cycle-runner needed
+# (that HERMES_CYCLE_URL model is the frozen M1 approach). Install: crontab crontab.example
+# Env (INGEST_URL, INGEST_TOKEN, OPENROUTER_API_KEY, CHORUS_*, TELEGRAM_*, SUPERMEMORY_*) via a
+# sourced env file or Doppler:  e.g.  */... doppler run -- python3 /opt/chorus/box/ranker.py ...
+
+# 08:00 IST — rank today's candidates into the queue (local adapter)
+30 2 * * *  cd /opt/chorus/box && python3 ranker.py >> /var/log/chorus.log 2>&1
+# 08:05 IST — Telegram digest + heartbeat
+35 2 * * *  cd /opt/chorus/box && python3 digest.py >> /var/log/chorus.log 2>&1
+# every 30 min — mirror new feedback (accept/reject) into Supermemory chorus:self
+*/30 * * * *  cd /opt/chorus/box && python3 mirror_feedback.py >> /var/log/chorus.log 2>&1
+# 09:00 IST — outcome tracking of yesterday's posted replies (once the adapter is wired)
+# 09:00 IST — measure yesterday's posted replies (feeds rank-tune)
+30 3 * * *  cd /opt/chorus/box && python3 outcome_track.py >> /var/log/chorus.log 2>&1
+# 02:00 IST — nightly D1 backup
+30 20 * * *  cd /opt/chorus/box && python3 backup.py >> /var/log/chorus.log 2>&1
+# Sunday 07:00 IST — weekly learning: refine voice from posted replies + tune ranking weights
+0 1 * * 0  cd /opt/chorus/box && python3 rank_tune.py >> /var/log/chorus.log 2>&1
+30 1 * * 0  cd /opt/chorus/box && python3 voice_refine.py >> /var/log/chorus.log 2>&1
+# NOTE: telegram_bot.py is a long-running DAEMON (not cron) — run under systemd/pm2 when Telegram is enabled.
+# Sunday 06:00 IST — refresh the target list from your evolving network (keeps lists current)
+0 0 * * 0  cd /opt/chorus/box && python3 refresh_targets.py >> /var/log/chorus.log 2>&1

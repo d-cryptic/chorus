@@ -1,0 +1,31 @@
+# node
+node_modules/
+.wrangler/
+dist/
+.dev.vars
+# terraform / opentofu
+**/.terraform/
+*.tfstate
+*.tfstate.*
+**/terraform.tfvars
+*.auto.tfvars
+# env / secrets
+.env
+*.local
+# os
+.DS_Store
+__pycache__/
+*.pyc
+.mirror_state
+box/candidate_source.py
+box/.env
+box/sources/
+box/discover.py
+box/audit_network.py
+box/refresh_targets.py
+box/targets.json
+box/followers.json
+
+# box data caches (network dumps — PII, never publish)
+box/*.json
+!box/*.example.json

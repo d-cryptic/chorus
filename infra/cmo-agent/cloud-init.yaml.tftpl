@@ -1,0 +1,87 @@
+#cloud-config
+# First-boot provisioning for the CMO Hermes runtime box.
+# Rendered by templatefile() in hetzner.tf — $${...} would be a literal shell var;
+# $${...} is escaped, plain $${...} template vars are substituted by OpenTofu.
+
+package_update: true
+package_upgrade: true
+packages:
+  - curl
+  - ca-certificates
+  - ufw
+  - cron
+
+write_files:
+  # Hermes environment. With use_doppler=true the SECRETS are omitted here (kept out of
+  # TF state / cloud-init) and pulled from Doppler at runtime instead.
+  - path: /etc/hermes/hermes.env
+    permissions: '0600'
+    owner: root:root
+    content: |
+      HERMES_UI_PORT=${hermes_ui_port}
+      TELEGRAM_CHAT_ID=${telegram_chat_id}
+%{ if !use_doppler ~}
+      OPENROUTER_API_KEY=${openrouter_api_key}
+      SUPERMEMORY_API_KEY=${supermemory_api_key}
+      CANDIDATE_API_KEY=${candidate_api_key}
+      FIRECRAWL_API_KEY=${firecrawl_api_key}
+      INGEST_TOKEN=${ingest_token}
+      TELEGRAM_BOT_TOKEN=${telegram_bot_token}
+      GITHUB_TOKEN=${github_token}
+      REDDIT_CLIENT_ID=${reddit_client_id}
+      REDDIT_SECRET=${reddit_secret}
+      YOUTUBE_API_KEY=${youtube_api_key}
+%{ else ~}
+      # secrets pulled from Doppler at runtime — launch services via: doppler run -- <cmd>
+%{ endif ~}
+
+  # Real SSH hardening — Ubuntu 24.04 Include's sshd_config.d/*, so a drop-in wins (sed on the
+  # main file is ineffective). Key-only, no root password.
+  - path: /etc/ssh/sshd_config.d/99-chorus.conf
+    permissions: '0644'
+    content: |
+      PasswordAuthentication no
+      KbdInteractiveAuthentication no
+      PermitRootLogin prohibit-password
+
+runcmd:
+  # 1. Install cloudflared and join the tunnel with the provider-issued token.
+%{ if cloudflared_version != "" ~}
+  - curl -fL --output /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/download/${cloudflared_version}/cloudflared-linux-${cloudflared_arch}.deb
+%{ else ~}
+  - curl -fL --output /tmp/cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-${cloudflared_arch}.deb
+%{ endif ~}
+  - dpkg -i /tmp/cloudflared.deb
+  - cloudflared service install ${tunnel_token}
+  - systemctl enable --now cloudflared || true
+
+%{ if use_doppler ~}
+  # Doppler — pull secrets at runtime instead of from TF state.
+  - curl -Ls https://cli.doppler.com/install.sh | sh
+  - doppler configure set token ${doppler_token} --scope /opt/hermes || true
+%{ endif ~}
+%{ if healthcheck_url != "" ~}
+  # Liveness ping (G5) — a dead box/cycle becomes visible.
+  - ( crontab -l 2>/dev/null; echo "*/15 * * * * curl -fsS -m 10 ${healthcheck_url} >/dev/null 2>&1" ) | crontab -
+%{ endif ~}
+
+  # 2. Harden SSH — key-only auth (belt-and-suspenders; cloud image is already key-only).
+  - systemctl restart ssh || systemctl restart sshd || true   # picks up 99-chorus.conf drop-in
+
+  # 3. Local firewall (defence in depth): allow SSH, deny other inbound. The Hermes
+  #    port is NOT opened — it's reachable only via the outbound tunnel.
+  - ufw --force reset
+  - ufw default deny incoming
+  - ufw default allow outgoing
+  - ufw allow 22/tcp
+  - ufw --force enable
+
+  # 4. Hermes install (or leave a marker if the command wasn't provided).
+%{ if hermes_install_cmd != "" ~}
+  - ${hermes_install_cmd}
+%{ else ~}
+  - mkdir -p /opt/hermes
+  - echo "Set hermes_install_cmd (see github.com/NousResearch/hermes-agent) and re-apply, or install manually. Env is at /etc/hermes/hermes.env; Hermes UI must listen on port ${hermes_ui_port} for the tunnel." > /opt/hermes/INSTALL_ME.txt
+%{ endif ~}
+
+final_message: "CMO Hermes box ready. Tunnel up on the configured hostname (Access-gated). $UPTIME"

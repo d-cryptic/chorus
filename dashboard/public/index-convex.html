@@ -1,0 +1,60 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chorus — queue (reactive / M1)</title>
+<!-- Set your deployment URL (self-hosted-behind-tunnel or *.convex.cloud). -->
+<meta name="convex-url" content="REPLACE_WITH_CONVEX_URL">
+<style>
+  :root{--bg:#000;--panel:#0c0c0d;--panel2:#141416;--border:#262628;--rule:#3a3a3d;--fg:#f2f2f2;
+    --muted:#8a8a8a;--faint:#646467;--green:#7ec699;--tan:#c9b07e;--maroon:#b06a6a;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;--sans:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;}
+  *{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font-family:var(--sans);line-height:1.5}
+  header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--rule);padding:16px 24px;display:flex;gap:14px;align-items:baseline;flex-wrap:wrap}
+  header h1{font-size:16px;font-weight:800;margin:0}header .live{font-family:var(--mono);font-size:11px;color:var(--green)}
+  header .meta{font-family:var(--mono);font-size:12px;color:var(--muted);margin-left:auto}
+  main{max-width:920px;margin:0 auto;padding:20px 24px 80px}
+  .card{border:1px solid var(--border);border-radius:6px;background:var(--panel);padding:18px 20px;margin:0 0 16px}
+  .top{display:flex;gap:10px;align-items:baseline;font-family:var(--mono);font-size:12px;color:var(--muted);flex-wrap:wrap}
+  .score{font-weight:700;color:var(--green)}.chip{border:1px solid var(--border);border-radius:2px;padding:0 6px;color:var(--faint)}
+  .tweet{margin:10px 0 6px;font-size:15px;color:#e9e9e9}.angle{font-family:var(--mono);font-size:12.5px;color:var(--tan);margin:6px 0 12px}
+  .draft{display:flex;gap:10px;border-top:1px solid var(--border);padding:10px 0}.draft p{margin:0;font-size:14px;flex:1}
+  button{font-family:var(--mono);font-size:11px;background:transparent;color:var(--muted);border:1px solid var(--border);border-radius:3px;padding:4px 10px;cursor:pointer}
+  button:hover{color:var(--green);border-color:var(--green)}.actions{display:flex;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .empty{font-family:var(--mono);color:var(--faint);font-size:13px;padding:40px 0;text-align:center}
+</style></head>
+<body>
+<header><h1>Chorus · queue</h1><span class="live">● live</span><span class="meta" id="count">…</span></header>
+<main id="list"><div class="empty">connecting…</div></main>
+<script type="module">
+import { ConvexClient } from "https://esm.sh/convex@1.17.0/browser";
+const URL_=document.querySelector('meta[name="convex-url"]').content;
+const esc=s=>(s??"").toString().replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const client=new ConvexClient(URL_);
+// REACTIVE: re-renders the instant the box enqueues — no polling.
+client.onUpdate("suggestions:listQueued",{status:"queued"},(rows)=>render(rows||[]));
+function render(rows){
+  document.getElementById("count").textContent=rows.length+" queued";
+  const list=document.getElementById("list");
+  list.innerHTML=rows.length?rows.map(card).join(""):'<div class="empty">nothing queued.</div>';
+  list.querySelectorAll("[data-act]").forEach(b=>b.onclick=()=>act(b.dataset));
+  list.querySelectorAll("[data-copy]").forEach(b=>b.onclick=()=>navigator.clipboard.writeText(b.dataset.copy));
+}
+function card(s){
+  const drafts=(s.drafts||[]);
+  const intents=drafts.map(d=>`<div class="draft"><p>${esc(d)}</p><button data-copy="${esc(d)}">copy</button>
+    <a href="https://x.com/intent/post?text=${encodeURIComponent(d)}${s.tweetId?`&in_reply_to=${encodeURIComponent(s.tweetId)}`:""}" target="_blank" rel="noopener"><button>open reply ↗</button></a></div>`).join("");
+  return `<div class="card"><div class="top"><span class="score">${(s.score||0).toFixed(2)}</span>
+    <span>@${esc(s.authorHandle)}</span>${s.authorTier?`<span class="chip">tier ${esc(s.authorTier)}</span>`:""}${s.pillar?`<span class="chip">${esc(s.pillar)}</span>`:""}</div>
+    <div class="tweet">${esc(s.tweetText)}</div>${s.angle?`<div class="angle">▸ ${esc(s.angle)}</div>`:""}${intents}
+    <div class="actions">
+      <button data-act="posted" data-id="${s._id}">✓ posted</button>
+      <button data-act="posted_edited" data-id="${s._id}">✎ posted (edited)</button>
+      <button data-act="snoozed" data-id="${s._id}">⏱ snooze</button>
+      <button data-act="dismissed" data-id="${s._id}">✕ dismiss</button></div></div>`;
+}
+async function act(ds){
+  const a={action:ds.act};
+  if(ds.act==="dismissed")a.reason=prompt("dismiss reason:")||undefined;
+  if(ds.act==="posted_edited"){const t=prompt("paste what you actually posted:");if(!t)return;a.finalText=t;}
+  await client.mutation("suggestions:act",{id:ds.id,...a}); // reactive query updates automatically
+}
+</script></body></html>
