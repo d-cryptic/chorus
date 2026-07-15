@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-type M = { type?: string; url?: string; page?: string };
+type M = { type?: string; url?: string; page?: string; attribution?: string };
 
 /** X renders media in a 16px-rounded frame with a hairline border, 1-4 up.
  *  Real media matters for judgement: an image-led tweet reads completely
@@ -31,6 +31,13 @@ export function MediaGrid({ media }: { media: M[] }) {
             <span className="absolute bottom-1.5 left-1.5 rounded px-1 py-0.5 text-[10px] font-bold uppercase"
                   style={{ background: "rgba(0,0,0,.75)", color: "#fff" }}>
               {m.type === "animated_gif" ? "GIF" : m.type}
+            </span>
+          )}
+          {/* Giphy ToS: attribution must be visible wherever a Giphy GIF is shown. */}
+          {m.attribution && (
+            <span className="absolute bottom-1.5 right-1.5 rounded px-1 py-0.5 text-[9px] font-medium"
+                  style={{ background: "rgba(0,0,0,.75)", color: "#fff" }}>
+              {m.attribution}
             </span>
           )}
         </a>
