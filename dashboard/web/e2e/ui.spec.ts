@@ -347,3 +347,30 @@ test("a non-JSON body does not hang the page on Loading", async ({ page }) => {
   await expect(page.getByText(/Can.t read the queue/)).toBeVisible({ timeout: 5000 });
   await expect(page.getByText("Loading…")).toHaveCount(0);
 });
+
+/** A QUOTE draft must build an intent URL that X reads as a quote (`&url=<tweet>`), not a
+ *  reply (`&in_reply_to=`). Measured on real data: 6 of 6 quote drafts never reached X (0%),
+ *  vs 8/8 for post+reply — because a quote was built as a reply and lost its quoted tweet.
+ */
+test("a quote draft opens X as a quote, not a reply", async ({ page }) => {
+  const opened: string[] = [];
+  await page.exposeFunction("__cap", (u: string) => { opened.push(u); });
+  await page.addInitScript(() => { window.open = (u?: any) => { (window as any).__cap(String(u)); return null; }; });
+  await page.route("**/api/suggestions*", (r) =>
+    r.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({
+      counts: { queued: 1 },
+      suggestions: [{
+        id: "q1", tweet_id: "1780000000000000000", tweet_url: "https://x.com/someone/status/1780000000000000000",
+        tweet_text: "a take worth quoting", author_handle: "someone", author_tier: "B", score: 0.8,
+        factors: "{}", pillar: "AI", angle: "counter", target: "quote", status: "queued",
+        drafts: JSON.stringify(["my sharp quote-tweet commentary"]), thread: "[]", longform: null, media: "[]",
+      }],
+    })}));
+  await page.goto("/");
+  await page.getByRole("button", { name: /Post/ }).first().click();
+  await expect.poll(() => opened.length).toBeGreaterThan(0);
+  const url = opened.find((u) => u.includes("intent/post")) || "";
+  expect(url).toContain("url=");                       // the quoted tweet is attached
+  expect(url).not.toContain("in_reply_to");            // NOT a reply
+  expect(decodeURIComponent(url)).toContain("status/1780000000000000000");
+});

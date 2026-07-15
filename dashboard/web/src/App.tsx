@@ -186,10 +186,19 @@ export default function App() {
     return Array.from({ length: n }, (_, i) => (i + off) % n);
   };
   const selected = (s: Sug) => draftsOf(s)[pick[s.id] ?? heroOffset(s)] ?? "";
-  const intent = (s: Sug, text: string) =>
-    // a post is standalone: never attach in_reply_to, even if a source ref exists
-    `https://x.com/intent/post?text=${encodeURIComponent(text)}` +
-    (s.target !== "post" && s.tweet_id ? `&in_reply_to=${encodeURIComponent(s.tweet_id)}` : "");
+  const intent = (s: Sug, text: string) => {
+    const base = `https://x.com/intent/post?text=${encodeURIComponent(text)}`;
+    // A QUOTE tweet is `?text=...&url=<tweet_url>` — X embeds the quoted tweet. It was being
+    // built as `&in_reply_to=<id>`, i.e. a REPLY, so every quote either lost its quoted tweet
+    // or posted as a reply. Measured: 6 of 6 quote drafts never reached X (0% publish) while
+    // post/reply hit 8/8. A quote needs the tweet URL, not in_reply_to.
+    if (s.target === "quote" && (s.tweet_url || s.tweet_id)) {
+      const url = s.tweet_url || `https://x.com/i/web/status/${s.tweet_id}`;
+      return `${base}&url=${encodeURIComponent(url)}`;
+    }
+    // a reply attaches in_reply_to; a post is standalone (never attach, even with a source ref)
+    return base + (s.target !== "post" && s.tweet_id ? `&in_reply_to=${encodeURIComponent(s.tweet_id)}` : "");
+  };
   /** The edit path's twin of postOnX: ONE action, and the text you actually edited.
    *  It cannot go through postOnX -- that fires act(s,"posted") itself (two rows per edit)
    *  and re-indexes drafts by pick[s.id] (blank composer if you had pressed 2 or 3). */
