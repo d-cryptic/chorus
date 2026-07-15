@@ -140,6 +140,26 @@ def run():
     chk(len(old) == 1 and old[0]["decayed_from"] == 0.9,
         "decayed rows are kept, not deleted, with their original confidence")
 
+    # --- the guard that makes every claim honest, pinned by DEFAULT --------------------
+    # Mutation audit: setting MIN_SAMPLE = 1 was caught by NOBODY. Every test passed
+    # min_sample= explicitly, so the default — the thing production actually uses — was
+    # untested. Someone could drop it to 1 and the suite would stay green while the engine
+    # started making confident claims from a single data point, which is the exact failure
+    # this whole module exists to prevent ("NEVER claim anything at low n").
+    chk(I.MIN_SAMPLE >= 5, f"MIN_SAMPLE default is >=5 (is {I.MIN_SAMPLE})")
+    # and the default must actually BE the one rank_buckets uses when nobody passes it
+    tiny = {"a": {"posted": 1, "total": 1}, "b": {"posted": 4, "total": 4}}
+    chk(I.rank_buckets(tiny) == [], "rank_buckets() with NO min_sample arg still refuses n<5")
+    big = {"a": {"posted": 5, "total": 5}}
+    chk(len(I.rank_buckets(big)) == 1, "...and admits a bucket that clears it")
+    # build_insights must inherit it: a 1-row corpus may not yield a claim
+    one = [{"action": "posted", "author_handle": "x", "pillar": "AI", "ts": NOW, "factors": {}}]
+    claims = [i for i in I.build_insights(one, now_ms=NOW)
+              if (i.get("payload") or {}).get("state") != "insufficient_data"]
+    ranked_claims = [c for c in claims if c["kind"] in ("winning_format", "winning_shape",
+                                                        "useful_account", "best_time")]
+    chk(not ranked_claims, "build_insights makes NO ranked claim from a single row")
+
     print(f"INSIGHTS UNIT: {p} passed, {f} failed"); return f
 
 import sys; sys.exit(run())

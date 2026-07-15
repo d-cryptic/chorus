@@ -60,5 +60,31 @@ def run():
     chk(R._sm_hits({}) == [], "empty payload -> []")
     chk(R._sm_hits({"results": [{"chunks": []}]})[0][0] == "", "no chunks -> empty text, no crash")
 
+    # --- already_said's PRODUCTION path (threshold=None) was never exercised -----------
+    # Mutation audit: changing `if threshold is None:` to `if False:` was caught by NOBODY.
+    # Every test passed an explicit threshold, so the branch that PICKS the threshold — the
+    # one production uses, and the one carrying the cosine-vs-BM25 scale logic — was untested.
+    # That branch is the whole repetition guard: get it wrong and Chorus repeats itself
+    # forever, silently, which is exactly what a tau of 1.0 against cosine 0..1 already did.
+    calls = []
+    real_req = R._req
+    def fake_req(url, method="GET", token=None, body=None, timeout=8):
+        calls.append(body)
+        return UPSTREAM if "search" in url else {}
+    R._req = fake_req
+    try:
+        hit = R.already_said("voice: short, punchy sentences, minimal fluff")   # NO threshold arg
+        chk(hit is None, "cosine 0.615 < the cosine default (0.88): correctly not a repeat")
+        R._sm_hits_orig = R._sm_hits
+        R._sm_hits = lambda out: [("x", 0.99, True)]        # a near-identical, semantic backend
+        chk(R.already_said("anything") is not None, "cosine 0.99 IS a repeat at the default")
+        R._sm_hits = lambda out: [("x", 0.99, False)]       # BM25 backend: 0.99 is NOT a repeat
+        chk(R.already_said("anything") is None, "BM25 0.99 is below the BM25 default (1.0)")
+        R._sm_hits = lambda out: [("x", 3.7, False)]
+        chk(R.already_said("anything") is not None, "BM25 3.7 IS a repeat")
+    finally:
+        R._req = real_req
+        if hasattr(R, "_sm_hits_orig"): R._sm_hits = R._sm_hits_orig
+
     print(f"SM COMPAT UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())
