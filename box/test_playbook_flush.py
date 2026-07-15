@@ -12,6 +12,9 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 
 def run():
+    import os as _eo, importlib as _il, budget as _b
+    _saved = _eo.environ.pop("CHORUS_DRAFT_PROVIDER", None)
+    _il.reload(_b)
     p = f = 0
     def chk(c, l):
         nonlocal p, f
@@ -51,6 +54,9 @@ def run():
     chk(doc is None, "a malformed reply must return None")
     chk(tr.spent > 0, "synthesize_playbook must RECORD spend before it fails -> flush has something to post")
 
+    if _saved is not None:
+        _eo.environ["CHORUS_DRAFT_PROVIDER"] = _saved
+    _il.reload(_b)
     print(f"PLAYBOOK FLUSH UNIT: {p} passed, {f} failed")
     return 1 if f else 0
 
