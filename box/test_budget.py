@@ -97,6 +97,29 @@ def run():
     cb2.on_failure(10)
     chk(cb2.state == B.OPEN and cb2.opened_at == 10, "half_open failure re-opens immediately")
 
+    # --- on_demand: scheduling is overridable, safety is not -------------------
+    # The user pressed Fetch and the ranker skipped it. Quiet hours exist to stop AUTOMATIC
+    # polling while they sleep; a human clicking the button is proof they are awake. The
+    # button silently doing nothing is indistinguishable from a broken product.
+    q = lambda **k: B.BudgetTracker(spent=0, ceiling=10, quiet="0-7", hour_local=3, **k)
+    try:
+        q().check("llm_draft"); chk(False, "cron inside quiet hours must be blocked")
+    except B.QuietHours: chk(True, "cron inside quiet hours is blocked")
+    try:
+        q(on_demand=True).check("llm_draft"); chk(True, "on_demand overrides quiet hours")
+    except B.QuietHours: chk(False, "on_demand must override quiet hours")
+    # safety must NOT be overridable by a click
+    for flag, exc, name in ((dict(killed=True), B.Killed, "killed"), (dict(paused=True), B.Paused, "paused")):
+        try:
+            B.BudgetTracker(spent=0, ceiling=10, on_demand=True, **flag).check("llm_draft")
+            chk(False, f"on_demand must NOT override {name} (safety)")
+        except exc: chk(True, f"on_demand does not override {name}")
+    # nor the ceiling: on_demand is not a licence to overspend
+    try:
+        B.BudgetTracker(spent=9.999, ceiling=10, on_demand=True).check("llm_synth")
+        chk(False, "on_demand must NOT override the ceiling")
+    except B.BudgetExceeded: chk(True, "on_demand does not override the ceiling")
+
     print(f"BUDGET UNIT: {p} passed, {f} failed"); return f
 
 import sys; sys.exit(run())

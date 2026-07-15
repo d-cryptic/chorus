@@ -83,13 +83,15 @@ class BudgetTracker:
 
     def __init__(self, spent: float = 0.0, ceiling: float = 0.65, *,
                  paused: bool = False, killed: bool = False,
-                 quiet: str | None = None, hour_local: int | None = None):
+                 quiet: str | None = None, hour_local: int | None = None,
+                 on_demand: bool = False):
         self.spent_remote = float(spent)
         self.ceiling = float(ceiling)
         self.paused = bool(paused)
         self.killed = bool(killed)
         self.quiet = quiet
         self.hour_local = hour_local
+        self.on_demand = on_demand
         self.spent_local = 0.0
         self.ledger: list[tuple[str, int, float]] = []  # (op, count, usd) not yet flushed
 
@@ -112,7 +114,13 @@ class BudgetTracker:
             raise Killed("global kill-switch is on")
         if self.paused:
             raise Paused("agent is paused via settings")
-        if self.hour_local is not None and in_quiet_hours(self.hour_local, self.quiet):
+        # Quiet hours stop AUTOMATIC polling while the user is asleep. A human pressing
+        # Fetch is proof they are awake, so an explicit request overrides it -- otherwise the
+        # button silently does nothing during the very window a night owl would use it, which
+        # is indistinguishable from "the product is broken".
+        # Kill/pause above are NOT overridable: those are safety, not scheduling.
+        if (self.hour_local is not None and not self.on_demand
+                and in_quiet_hours(self.hour_local, self.quiet)):
             raise QuietHours(f"within quiet hours {self.quiet}")
         usd = estimate_cost_usd(op, count)
         if self.spent + usd > self.ceiling:

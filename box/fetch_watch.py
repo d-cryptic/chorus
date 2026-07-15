@@ -26,4 +26,7 @@ if not claimed:
     sys.exit(0)
 print("fetch requested from dashboard -> running a cycle")
 here = os.path.dirname(os.path.abspath(__file__))
-sys.exit(subprocess.call(["python3", os.path.join(here, "ranker.py"), "--pages", "1", "--cap", "10"]))
+# --on-demand: a human pressed Fetch, so quiet hours must not veto it. Without this the
+# button silently does nothing during the exact window a night owl would press it.
+sys.exit(subprocess.call(["python3", os.path.join(here, "ranker.py"),
+                          "--pages", "1", "--cap", "10", "--on-demand"]))

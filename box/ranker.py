@@ -555,8 +555,16 @@ def run(args):
             _alert(f"Chorus cycle aborted: cannot read budget/settings ({repr(e)[:60]})")
             return
         tracker = B.BudgetTracker(spent=spent, ceiling=ceiling, paused=paused,
-                                  killed=killed, quiet=quiet,
-                                  hour_local=time.localtime().tm_hour)
+                                  killed=killed, quiet=quiet, on_demand=args.on_demand,
+                                  # NOT time.localtime(): the box runs UTC, so that reads
+                                  # the BOX's clock and evaluates the user's quiet hours 5.5h
+                                  # off — it would skip their morning and poll their sleep.
+                                  # Dormant only because quiet_hours is currently NULL; the
+                                  # moment it is set from the dashboard it silently inverts.
+                                  # Same bug fast_lane already had. Use the user's offset.
+                                  hour_local=time.gmtime(
+                                      time.time() + float(os.environ.get("CHORUS_TZ_OFFSET_H", "5.5")) * 3600
+                                  ).tm_hour)
         # settings.denylist existed in the schema but nothing ever read it (same class
         # of bug as quiet_hours). Merge it with the CLI list so the dashboard can
         # actually block a term without a redeploy.
@@ -764,6 +772,10 @@ def main():
     ap.add_argument("--query", help="candidate query override (passed to the local adapter)")
     ap.add_argument("--pages", type=int, default=2, help="pages to fetch (local adapter)")
     ap.add_argument("--dry-run", action="store_true", help="no network; print what would be queued")
+    ap.add_argument("--on-demand", action="store_true",
+                    help="a human pressed Fetch. Overrides quiet hours (they are asleep-"
+                         "scheduling, and the click proves otherwise). Never overrides "
+                         "kill/pause -- those are safety.")
     ap.add_argument("--tau", type=float, default=0.6)
     ap.add_argument("--cap", type=int, default=25)
     ap.add_argument("--topk", type=int, default=50)
