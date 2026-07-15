@@ -29,7 +29,15 @@ import os, re, sys, json, time, argparse, urllib.parse
 import budget as B
 from ranker import _req, _alert, get_voice, voice_context, niche_context, flush_spend, run_log, ingest, content_id
 
-CAP_PER_DAY = int(os.environ.get("CHORUS_POSTS_PER_DAY", "3"))
+# Measured acceptance by route (n=21 decisions): post 3/3 = 100%, quote 4/6 = 67%,
+# reply 3/12 = 25%. The queue was inverted against that — 17 replies to 6 posts — because
+# fast_lane runs 144x/day and post_gen ran once. Posts are also the CHEAPEST lane
+# ($0.0014/idea, 7x cheaper than a fast_lane run), so generating more of what the user
+# actually posts costs almost nothing.
+# NOT cutting replies: they are the growth mechanism (they borrow someone else's audience),
+# and follower attribution is n=2 — nowhere near enough to tune on. Add to what works rather
+# than subtract from what might.
+CAP_PER_DAY = int(os.environ.get("CHORUS_POSTS_PER_DAY", "5"))
 
 
 # ---- idea sources ----------------------------------------------------------
