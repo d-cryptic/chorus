@@ -28,6 +28,7 @@ from __future__ import annotations
 import os, re, sys, json, time, argparse, urllib.parse
 import budget as B
 from ranker import _req, _alert, get_voice, voice_context, niche_context, flush_spend, run_log, ingest, content_id, scrub
+import content_modes as CM
 
 # Measured acceptance by route (n=21 decisions): post 3/3 = 100%, quote 4/6 = 67%,
 # reply 3/12 = 25%. The queue was inverted against that — 17 replies to 6 posts — because
@@ -184,7 +185,7 @@ def _shape_brief(shape):
     return _SHAPE_BRIEFS.get(shape, _SHAPE_BRIEFS["post"])
 
 
-def build_prompt(idea, voice, examples, niche, pillars, *, shape="post"):
+def build_prompt(idea, voice, examples, niche, pillars, *, shape="post", mode=None):
     ex = ("\n".join(f"- {e}" for e in examples))[:600]
     return (
         "You draft an ORIGINAL X post that a REAL person will publish from their own "
@@ -229,6 +230,7 @@ def build_prompt(idea, voice, examples, niche, pillars, *, shape="post"):
         "post. Do not reach.\n"
         "   Longform still obeys every voice rule above: same dry wit, no em-dashes, no "
         "hashtags, no sign-off, no LinkedIn cadence, no 'Here's why:' listicle scaffolding.\n"
+        + (CM.mode_brief(mode) if mode else "")
         + _shape_brief(shape)
     )
 
@@ -318,12 +320,14 @@ def correlate_sources(ideas, *, min_overlap=2):
         out.append(merged)
     return out
 
-def _chat(body, api_key):
-    """One drafting completion. Routes through Hermes (subscription, $0 marginal) when
-    CHORUS_DRAFT_PROVIDER=hermes:<provider>:<model> is set, else OpenRouter HTTP. Same return
-    shape either way, so the callers parse it identically. A Hermes failure raises exactly like
-    an OpenRouter failure, so the existing degrade-not-crash handling covers both."""
+def _chat(body, api_key, provider=None):
+    """One drafting completion. With an explicit `provider` spec (per-mode routing) dispatch
+    there; else route by CHORUS_DRAFT_PROVIDER; else OpenRouter HTTP. Same return shape either
+    way. A provider failure raises exactly like an OpenRouter failure, so the existing
+    degrade-not-crash handling covers all paths."""
     import hermes_backend as H
+    if provider:                            # per-mode: grok for short/sarcastic, codex for research/longform/thread
+        return H.route(body, provider)
     if H.cli_spec() is not None:            # cli:claude|grok|codex — subscription, $0
         return H.cli_complete(body)
     if H.hermes_spec() is not None:         # hermes:<provider>:<model>
@@ -398,7 +402,7 @@ def classify_shape(idea, *, model, api_key, tracker=None):
                 return "post", f"classify failed: {repr(e)[:40]}"
     return "post", "empty response after 3 tries"
 
-def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker, shape=None):
+def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker, shape=None, mode=None):
     if not api_key:
         return None
     try:
@@ -409,10 +413,17 @@ def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker
     # post-centric prompt always returned "post". Passed in so the framing cannot override it.
     if shape is None:
         shape, _why = classify_shape(idea, model=model, api_key=api_key, tracker=tracker)
+    # MODE (style/fidelity) is orthogonal to SHAPE (structure). Default the mode from the
+    # shape (post->short, thread->thread, longform->longform); an explicit mode (e.g.
+    # "sarcastic"/"research") or CHORUS_FORCE_MODE overrides. The mode picks the model:
+    # grok for short/sarcastic (X-native), codex for research/longform/thread (structured).
+    if mode is None:
+        mode = os.environ.get("CHORUS_FORCE_MODE") or CM.default_mode_for_shape(shape)
+    provider = CM.provider_for(mode)   # None -> global/OpenRouter fallback
     body = {"model": model, "response_format": {"type": "json_object"}, "max_tokens": 1600,   # longform needs room; thread+2 drafts+longform
-            "messages": [{"role": "user", "content": build_prompt(idea, voice, examples, niche, pillars, shape=shape)}]}
+            "messages": [{"role": "user", "content": build_prompt(idea, voice, examples, niche, pillars, shape=shape, mode=mode)}]}
     try:
-        out = _chat(body, api_key)
+        out = _chat(body, api_key, provider=provider)
         tracker.record("llm_draft", 1)
         txt = (out["choices"][0]["message"]["content"] or "").strip()
         if txt.startswith("```"):

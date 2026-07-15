@@ -40,8 +40,9 @@ def run():
     with mock.patch.dict(os.environ, {"CHORUS_DRAFT_PROVIDER": "hermes:anthropic:claude-sonnet-4.6"}), \
          mock.patch.object(subprocess, "run", fake_run):
         out = H.hermes_complete({"messages": [{"content": "topic: $(rm -rf /) `evil`"}], "model": "x"})
-    chk(out["choices"][0]["message"]["content"].startswith("```json"),
-        "returns the OpenAI {choices:[{message:{content}}]} shape")
+    # _extract now recovers clean JSON from fenced/chrome output, so content is the JSON body
+    chk(out["choices"][0]["message"]["content"] == '{"drafts":["hi"]}',
+        "returns the OpenAI shape with JSON isolated from fences/chrome")
     chk(any("$(rm -rf /) `evil`" in part for part in captured["cmd"]), "tweet text is an ARGV element, verbatim, not a shell string")
     chk("--safe-mode" in captured["cmd"], "--safe-mode: a completion, not a tool-using agent run")
 

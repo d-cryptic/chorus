@@ -21,9 +21,10 @@ import os, subprocess
 # CHORUS_DRAFT_PROVIDER = "hermes:<provider>:<model>"
 #   e.g. "hermes:anthropic:claude-sonnet-4.6"  (subscription, the point of this)
 #        "hermes:openrouter:anthropic/claude-sonnet-4.6"  (per-token, for testing the plumbing)
-def hermes_spec():
-    """(provider, model) if drafting is configured to go through Hermes, else None."""
-    raw = os.environ.get("CHORUS_DRAFT_PROVIDER", "")
+def hermes_spec(raw=None):
+    """(provider, model) if drafting is configured to go through Hermes, else None.
+    Pass an explicit `raw` spec for per-mode routing; else reads CHORUS_DRAFT_PROVIDER."""
+    raw = raw if raw is not None else os.environ.get("CHORUS_DRAFT_PROVIDER", "")
     if not raw.startswith("hermes:"):
         return None
     parts = raw.split(":", 2)
@@ -33,21 +34,50 @@ def hermes_spec():
 
 
 def _extract(stdout):
-    """Hermes echoes only the completion for a -z one-shot with tools off. Belt-and-braces:
-    drop any leading 'hermes -z:' notices and trailing blank lines, keep the body."""
-    lines = [l for l in stdout.splitlines() if not l.startswith("hermes -z:")]
+    """Isolate the model's completion from CLI chrome.
+
+    Hermes -z is clean (just drop 'hermes -z:' notices). Codex exec is NOT: it echoes the
+    prompt, prints a bubblewrap/sandbox warning, a 'codex' label, 'tokens used\n<n>', and often
+    repeats the answer. The drafter then json.loads() the result, so chrome must be stripped.
+    Strategy: if the text contains a JSON object, return the LAST balanced {...} that parses
+    (codex prints the final answer last); else drop known noise lines and return the body."""
+    import json as _j
+    text = "\n".join(l for l in stdout.splitlines() if not l.startswith("hermes -z:"))
+    # try to recover the last complete top-level JSON object (codex chrome case)
+    best = None
+    depth = 0; start = -1
+    for i, ch in enumerate(text):
+        if ch == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif ch == "}" and depth > 0:
+            depth -= 1
+            if depth == 0 and start >= 0:
+                frag = text[start:i+1]
+                try:
+                    _j.loads(frag); best = frag   # keep the LAST that parses
+                except Exception:
+                    pass
+    if best is not None:
+        return best
+    # no JSON: drop codex noise lines, keep the rest
+    noise = ("tokens used", "codex", "user", "warning:", "assistant")
+    lines = [l for l in text.splitlines()
+             if l.strip() and l.strip().lower() not in noise
+             and not l.startswith("warning:")]
     return "\n".join(lines).strip()
 
 
-def hermes_complete(body, *, timeout=90):
+def hermes_complete(body, *, timeout=90, spec=None):
     """Run one completion through `hermes -z`, shaped like an OpenRouter response.
 
     Raises on a non-zero exit or empty output, so the caller's existing `except` treats a
     Hermes failure exactly like an OpenRouter failure -- degrade, never a silent empty draft.
     """
-    spec = hermes_spec()
+    spec = hermes_spec(spec)
     if spec is None:
-        raise RuntimeError("hermes_complete called but CHORUS_DRAFT_PROVIDER is not hermes:*")
+        raise RuntimeError("hermes_complete called but the provider is not hermes:*")
     provider, model = spec
     prompt = "\n\n".join(m.get("content", "") for m in body.get("messages", []) if m.get("content"))
     if not prompt:
@@ -77,8 +107,8 @@ _CLI = {
 }
 
 
-def cli_spec():
-    raw = os.environ.get("CHORUS_DRAFT_PROVIDER", "")
+def cli_spec(raw=None):
+    raw = raw if raw is not None else os.environ.get("CHORUS_DRAFT_PROVIDER", "")
     if not raw.startswith("cli:"):
         return None
     name = raw.split(":", 1)[1]
@@ -87,15 +117,15 @@ def cli_spec():
     return name
 
 
-def cli_complete(body, *, timeout=120):
+def cli_complete(body, *, timeout=120, spec=None):
     """One completion through a logged-in CLI, shaped like an OpenRouter response.
 
     Raises on failure so the drafter degrades exactly as it does for an OpenRouter error --
     never a silent empty draft. The prompt is a single argv element (no shell), so tweet text
     cannot inject."""
-    name = cli_spec()
+    name = cli_spec(spec)
     if name is None:
-        raise RuntimeError("cli_complete called but CHORUS_DRAFT_PROVIDER is not cli:*")
+        raise RuntimeError("cli_complete called but the provider is not cli:*")
     prompt = "\n\n".join(m.get("content", "") for m in body.get("messages", []) if m.get("content"))
     if not prompt:
         raise ValueError("cli_complete: empty prompt")
@@ -112,3 +142,18 @@ def cli_complete(body, *, timeout=120):
     if not content:
         raise RuntimeError(f"{name} cli returned nothing")
     return {"choices": [{"message": {"content": content}}]}
+
+
+def route(body, provider_spec, *, timeout=None):
+    """Dispatch one completion to an EXPLICIT provider spec (per-mode routing).
+
+    provider_spec: "cli:<name>" | "hermes:<provider>:<model>". Raises on an unknown/empty spec
+    so the caller can fall back to the global/OpenRouter path. Codex gets a longer default
+    timeout (its sandboxed exec is slower than grok)."""
+    if not provider_spec:
+        raise RuntimeError("route: empty provider spec")
+    if provider_spec.startswith("cli:"):
+        return cli_complete(body, spec=provider_spec, timeout=timeout or (180 if "codex" in provider_spec else 120))
+    if provider_spec.startswith("hermes:"):
+        return hermes_complete(body, spec=provider_spec, timeout=timeout or 90)
+    raise RuntimeError(f"route: unroutable provider spec {provider_spec!r}")
