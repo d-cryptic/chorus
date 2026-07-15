@@ -45,7 +45,20 @@ def run():
         read = {n.attr for n in ast.walk(tree)
                 if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)
                 and n.value.id == "args" and isinstance(n.ctx, ast.Load)}
-        missing = read - defined - BUILTIN
+        # getattr(args, "no_budget", False) is the same bug with a default bolted on: the flag
+        # does not exist, so it silently reads False FOREVER. style_mine's budget tracker was
+        # None on every run because of exactly this, killing its ceiling and kill-switch. A
+        # plain args.x at least raises; this one just quietly lies.
+        read |= {n.args[1].value for n in ast.walk(tree)
+                 if isinstance(n, ast.Call) and getattr(n.func, "id", "") == "getattr"
+                 and len(n.args) >= 2 and getattr(n.args[0], "id", "") == "args"
+                 and isinstance(n.args[1], ast.Constant)}
+        # `args.x = v` CREATES the attribute, so a later read is legitimate (ranker does this
+        # to pass a computed window through). Only flag reads that nothing ever defines.
+        assigned = {n.attr for n in ast.walk(tree)
+                    if isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)
+                    and n.value.id == "args" and isinstance(n.ctx, ast.Store)}
+        missing = read - defined - assigned - BUILTIN
         if missing:
             print(f"  ❌ {path.name}: reads args.{{{', '.join(sorted(missing))}}} but its parser "
                   f"never defines them -> AttributeError at runtime")

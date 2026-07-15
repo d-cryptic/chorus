@@ -453,7 +453,12 @@ def main():
     # through the circuit breaker — and it is why today's provider credits fell faster than
     # the ledger could explain. The money is real, so the accounting is real. If the budget
     # is spent, a dry-run is refused too, which is correct: there is nothing left to spend.
-    if args.dry_run and args.no_budget:
+    # `args.dry_run and args.no_budget` required BOTH flags to drop the key, while the flush
+    # skip below tests `not args.no_budget` ALONE. So `post_gen.py --no-budget` (no --dry-run)
+    # made REAL paid calls AND never flushed -> money off-ledger -> tomorrow's ceiling does not
+    # bind. That is the exact hole these comments claim to have closed, with a friendlier name.
+    # The two conditions must be the SAME condition: no_budget => no paid call => nothing to flush.
+    if args.no_budget:
         # --no-budget skips the real ceiling, so it MUST also make no paid call — otherwise it
         # is the same hole with a friendlier name, and the comment claiming "offline only" is
         # a lie in the source. Enforced, not asserted: drop the API key so draft_post takes

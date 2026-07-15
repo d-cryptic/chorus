@@ -20,7 +20,7 @@ Env: CANDIDATE_API_KEY, OPENROUTER_API_KEY, OPENROUTER_MODEL, SUPERMEMORY_BASE_U
 from __future__ import annotations
 import os, json, time, argparse
 import budget as B
-from ranker import _req
+from ranker import _req, get_budget
 
 SM_BASE = os.environ.get("SUPERMEMORY_BASE_URL", "http://localhost:8000").rstrip("/")
 SM_URL = os.environ.get("SUPERMEMORY_ADD_URL", f"{SM_BASE}/v3/documents")
@@ -237,6 +237,8 @@ def niche_is_empty(sm_base: str, key: str) -> bool | None:
 def main():
     ap = argparse.ArgumentParser(description="Mine winning-post patterns from your niche")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-budget", action="store_true",
+                    help="offline/stubbed tests only: drops the API key so no paid call happens")
     ap.add_argument("--if-empty", action="store_true",
                     help="exit free unless chorus:niche is EMPTY. Lets a daily cron self-heal a "
                          "wipe within 24h while a normal day costs nothing.")
@@ -278,12 +280,24 @@ def main():
     # REAL budget. The fake $10 ceiling meant a dry-run could spend past the breaker and
     # never hit the ledger — the money is real, so the accounting is. --no-budget is for
     # offline tests that stub the network, not for previewing past the ceiling.
-    if getattr(args, "no_budget", False):
+    # `getattr(args, "no_budget", False)` silently defaulted to False forever (style_mine has
+    # no such flag), so tracker was ALWAYS None -> every `if tracker is not None` gate inside
+    # mine() was dead -> no ceiling, no kill-switch, no spend recorded, and no flush anywhere.
+    # Verified live: this run went through today while fast_lane was being REFUSED at the
+    # ceiling. getattr-with-a-default on argparse is how a missing flag becomes a silent no.
+    if args.no_budget:
         # Same rule as post_gen/fast_lane: no ceiling => no spending. Enforced, not promised.
         api_key = ""
         tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)
     else:
-        tracker = None
+        # A real tracker, from the real ledger: BudgetTracker(spent=0.0) would discard
+        # spent_remote and believe today's ledger is $0, which is the same evasion wearing a
+        # number. The kill-switch must stop the weekly paid mine like it stops everything else.
+        try:
+            spent, ceiling, paused, killed, quiet, autonomy, _dl = get_budget(base, token)
+            tracker = B.BudgetTracker(spent=spent, ceiling=ceiling, paused=paused, killed=killed)
+        except Exception as e:
+            print(f"  cannot read budget ({repr(e)[:40]}) - refusing to mine unmetered"); return
     d = mine(posts, model=model, api_key=api_key, tracker=tracker, mode=args.mode)
     if not d:
         return

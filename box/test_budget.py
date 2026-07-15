@@ -152,16 +152,39 @@ def run():
     # than the bug it replaced. A flag whose safety depends on the caller remembering
     # something is not a safety feature.
     # Enforced by clearing api_key so the drafters take their no-key stub path.
-    import re as _re2
+    # This was a SOURCE-PROXIMITY GREP: `idx = src.index("no_budget"); window = src[idx:idx+600]`.
+    # Two failure modes, both hit: it broke the moment a COMMENT mentioned no_budget earlier in
+    # the file (the index moved to the comment), and it structurally could not see a conjunct --
+    # it green-lit `if args.dry_run and args.no_budget:` in post_gen, where the flush skip tests
+    # `not args.no_budget` ALONE. `post_gen.py --no-budget` therefore made real paid calls AND
+    # never flushed. A test that greps source is the same false-confidence shape as the code it
+    # guards. This reads the AST and asserts the actual condition.
+    import ast as _ast
     for path in ("post_gen.py", "fast_lane.py", "style_mine.py"):
         src = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), path)).read()
-        if "no_budget" not in src:
+        if "args.no_budget" not in src:
             continue
-        # find the no_budget branch and require it to drop the key
-        idx = src.index("no_budget")
-        window = src[idx:idx + 600]
-        chk('api_key = ""' in window,
-            f"{path}: the --no-budget branch CLEARS api_key (no ceiling => no spending)")
+        tree = _ast.parse(src)
+        guards = []
+        for node in _ast.walk(tree):
+            if not isinstance(node, _ast.If):
+                continue
+            names = {n.attr for n in _ast.walk(node.test)
+                     if isinstance(n, _ast.Attribute) and getattr(n.value, "id", "") == "args"}
+            if "no_budget" not in names:
+                continue
+            clears = any(isinstance(a, _ast.Assign) and a.targets and getattr(a.targets[0], "id", "") == "api_key"
+                         and isinstance(a.value, _ast.Constant) and a.value.value == ""
+                         for a in _ast.walk(node))
+            if clears:
+                guards.append(node)
+        chk(bool(guards), f"{path}: no `if ...no_budget...:` branch clears api_key")
+        for g in guards:
+            # the guard must fire on no_budget ALONE. An `and` means --no-budget by itself
+            # skips the ceiling AND the flush while still holding a live key.
+            chk(isinstance(g.test, _ast.Attribute) and g.test.attr == "no_budget",
+                f"{path}:{g.lineno}: the key-drop is conditional on MORE than no_budget "
+                f"({_ast.dump(g.test)[:48]}) -> --no-budget alone spends off-ledger")
     # and the drafters must actually honour an empty key by not calling out
     import post_gen as _pg
     chk("if not api_key:" in inspect.getsource(_pg.draft_post),
