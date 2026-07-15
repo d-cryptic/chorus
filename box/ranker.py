@@ -152,7 +152,14 @@ def scrub(text):
     t = t.replace("\u2026", "...")
     while ", ," in t:
         t = t.replace(", ,", ",")
-    return t.replace(" ,", ",").strip()
+    t = t.replace(" ,", ",").strip()
+    # Strip a LEADING vocative tell ("bro a 27B..." -> "a 27B..."). A stronger model slips these
+    # even when the prompt forbids them (measured: claude opened a draft with "bro"). Only the
+    # LEAD is removed -- deterministic and safe, where deleting a mid-sentence "bro" would mangle
+    # the line. em-dashes proved a prompt ban is a request, not a guarantee; this is the guarantee.
+    import re as _re
+    t = _re.sub(r"^(bro|yo|folks|fam|guys|dude)[,!:\s]+", "", t, count=1, flags=_re.I).strip()
+    return t
 
 
 _STOP = {"the","a","an","of","to","and","or","in","on","for","with","is","are","was","were",

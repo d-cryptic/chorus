@@ -318,6 +318,17 @@ def correlate_sources(ideas, *, min_overlap=2):
         out.append(merged)
     return out
 
+def _chat(body, api_key):
+    """One drafting completion. Routes through Hermes (subscription, $0 marginal) when
+    CHORUS_DRAFT_PROVIDER=hermes:<provider>:<model> is set, else OpenRouter HTTP. Same return
+    shape either way, so the callers parse it identically. A Hermes failure raises exactly like
+    an OpenRouter failure, so the existing degrade-not-crash handling covers both."""
+    import hermes_backend as H
+    if H.hermes_spec() is not None:
+        return H.hermes_complete(body)
+    return _req("https://openrouter.ai/api/v1/chat/completions", "POST", api_key, body)
+
+
 def classify_shape(idea, *, model, api_key, tracker=None):
     """Decide post vs thread vs longform in a SEPARATE call. Returns (shape, why).
 
@@ -360,7 +371,7 @@ def classify_shape(idea, *, model, api_key, tracker=None):
         try:
             if tracker is not None:
                 tracker.check("llm_draft", 1)
-            out = _req("https://openrouter.ai/api/v1/chat/completions", "POST", api_key, body)
+            out = _chat(body, api_key)
             if tracker is not None:
                 tracker.record("llm_draft", 1)
             txt = (out["choices"][0]["message"]["content"] or "").strip()
@@ -399,7 +410,7 @@ def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker
     body = {"model": model, "response_format": {"type": "json_object"}, "max_tokens": 1600,   # longform needs room; thread+2 drafts+longform
             "messages": [{"role": "user", "content": build_prompt(idea, voice, examples, niche, pillars, shape=shape)}]}
     try:
-        out = _req("https://openrouter.ai/api/v1/chat/completions", "POST", api_key, body)
+        out = _chat(body, api_key)
         tracker.record("llm_draft", 1)
         txt = (out["choices"][0]["message"]["content"] or "").strip()
         if txt.startswith("```"):

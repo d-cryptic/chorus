@@ -445,19 +445,26 @@ def main():
         doc = synthesize_playbook([{ "kind": i["kind"], "payload": i["payload"],
                                      "confidence": i["confidence"]} for i in claims],
                                   model=model, api_key=api_key, tracker=tracker)
+        # FLUSH ALWAYS, not inside `if doc:`. synthesize_playbook records the spend the moment
+        # the paid call returns, then can still raise on a malformed reply and hand back None.
+        # With flush gated on `doc`, that spend never reached the ledger -- paid off the books,
+        # tomorrow's ceiling under-counts. Same shape as the mirror-watermark bug: the money
+        # moved, the accounting did not. flush() is safe at $0 when nothing was spent.
+        usd = tracker.flush()
+        if usd > 0:
+            # mirror ranker.flush_spend: a failed ledger POST must warn, never crash AFTER the
+            # paid call already happened.
+            try:
+                _req(f"{base}/api/box/spend", "POST", token, {"source": "insights", "usd": usd})
+            except Exception as e:
+                print(f"  WARN: ${usd} spent but NOT recorded ({repr(e)[:40]})")
         if doc:
             phase = doc.get("phase") or "cold_start"
             _req(f"{base}/api/box/playbook", "POST", token,
                  {"phase": phase, "doc": doc, "fingerprint": fp})
-            usd = tracker.flush()
-            if usd > 0:
-                # mirror ranker.flush_spend: a failed ledger POST must warn, never crash
-                # AFTER the paid call already happened.
-                try:
-                    _req(f"{base}/api/box/spend", "POST", token, {"source": "insights", "usd": usd})
-                except Exception as e:
-                    print(f"  WARN: ${usd} spent but NOT recorded ({repr(e)[:40]})")
             print(f"  playbook synthesized (phase={phase}, ${usd})")
+        elif usd > 0:
+            print(f"  playbook synthesis returned nothing, but ${usd} was spent and flushed")
     else:
         print("  L3 skipped: nothing moved (or no real claims) - $0 spent")
 
