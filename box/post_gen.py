@@ -423,7 +423,16 @@ def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker
     body = {"model": model, "response_format": {"type": "json_object"}, "max_tokens": 1600,   # longform needs room; thread+2 drafts+longform
             "messages": [{"role": "user", "content": build_prompt(idea, voice, examples, niche, pillars, shape=shape, mode=mode)}]}
     try:
-        out = _chat(body, api_key, provider=provider)
+        try:
+            out = _chat(body, api_key, provider=provider)
+        except RuntimeError as _pe:
+            # codex is slow/sandboxed and can time out or 500; fall back to grok so the cron
+            # never loses a draft to a codex hiccup. grok modes have no fallback (they degrade).
+            _fb = CM.fallback_provider_for(mode)
+            if not (_fb and _fb != provider):
+                raise
+            print(f"  {mode}: primary {provider} failed ({repr(_pe)[:36]}) -> fallback {_fb}")
+            out = _chat(body, api_key, provider=_fb)
         tracker.record("llm_draft", 1)
         txt = (out["choices"][0]["message"]["content"] or "").strip()
         if txt.startswith("```"):

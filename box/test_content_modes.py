@@ -68,6 +68,36 @@ def run():
     chk(CM.default_mode_for_shape("thread") == "thread", "thread -> thread default")
     chk(CM.default_mode_for_shape("longform") == "longform", "longform -> longform default")
 
+
+    # --- batch 2 modes ---
+    for m in ("contrarian", "story", "question", "quote", "listicle"):
+        chk(m in CM.MODES, f"mode {m} registered")
+        chk("—" not in CM.MODES[m]["brief"] and "–" not in CM.MODES[m]["brief"], f"{m}: no em/en-dashes")
+
+    con = CM.MODES["contrarian"]["brief"]
+    chk("hot take:" in con and "unpopular opinion:" in con, "contrarian: bans the attention badges")
+    chk("consensus" in con.lower() and "mechanism" in con.lower(), "contrarian: consensus + mechanism required")
+
+    st = CM.MODES["story"]["brief"]
+    chk("i built" in st, "story: bans fabricated first-person")
+    chk("observed" in st.lower(), "story: narrates the OBSERVED thing")
+
+    q = CM.MODES["question"]["brief"]
+    chk("what do you think?" in q and "thoughts?" in q, "question: bans lazy bait")
+    chk("lean" in q.lower(), "question: requires the asker's lean")
+
+    qt = CM.MODES["quote"]["brief"]
+    chk("so true" in qt and "restat" in qt.lower(), "quote: bans empty agreement + restating")
+    chk("card" in qt.lower() and "add" in qt.lower(), "quote: names the card + requires adding")
+
+    li = CM.MODES["listicle"]["brief"]
+    chk("be consistent" in li and "add value" in li, "listicle: bans generic filler tips")
+    chk("filler" in li.lower() and "specific" in li.lower(), "listicle: specific/independent items required")
+
+    # --- fallback: codex modes fall back to grok; grok modes have no fallback ---
+    chk(CM.fallback_provider_for("research") == "hermes:xai-oauth:grok-4.5", "research falls back to grok")
+    chk(CM.fallback_provider_for("short") is None, "short (grok) has no fallback")
+
     print(f"CONTENT MODES UNIT: {p} passed, {f} failed")
     return 1 if f else 0
 

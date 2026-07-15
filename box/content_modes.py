@@ -117,6 +117,16 @@ _THREAD_BRIEF = (
     "segment that is only a transition.\n"
 )
 
+_CONTRARIAN_BRIEF = "\nMODE: CONTRARIAN. The 'the popular take misses this' post. Three moves in order in one tweet: (1) STATE THE CONSENSUS FAIRLY in its strongest honest form. (2) REVERSE it: the specific way it is wrong or incomplete. (3) PAY FOR THE REVERSAL: name the mechanism, tradeoff, or concrete case that makes your version true. Move 3 is the whole value; a reversal with nothing under it is noise wearing a smart face.\n- The consensus must be the REAL one, stated so its holders would nod. If you weaken or exaggerate it to beat it, that is a strawman. Beat the best version or say nothing.\n- The reversal must be DEFENSIBLE, not merely opposite. Prefer 'right about the goal, wrong about the method' over 'everyone says X, actually not-X'.\n- One reason, concrete: a mechanism, a tradeoff, or one real case. Not a vibe.\n- Invent NOTHING to win: no fake numbers, studies, or first-person claims you do not have.\n- Punch UP or at the IDEA, never at people. Disagree with the take, not the takers.\nBANNED: 'hot take:', 'unpopular opinion:', 'controversial but', 'i said what i said' and every badge that announces contrarianism instead of earning it; strawmanning the consensus; a reversal with no reason under it; contrarian-for-attention; edgelording; punching down. State the consensus before you break it, every time.\n"
+
+_STORY_BRIEF = "\nMODE: STORY. A short scene with a turn. Make the reader FEEL the observed thing, then land it. Every concrete detail must come from VOICE/<context>/<idea>/<corroboration>. You narrate WHAT IS IN FRONT OF YOU, never a life you invented for this person.\n- HONESTY GUARD (this mode lives or dies here): you do NOT know this person's past. Do NOT write a first-person history, achievement, build, job, number or memory that is not in the grounding. No 'i built', 'last year i', 'i shipped', 'i made $X', 'back when i'. If it is not in the context, it did not happen and you may not say it did.\n- THE SCENE is the OBSERVED thing rendered small and concrete: the news as a moment, a detail from the idea framed vividly. Set it in one or two lines. Present tense helps.\n- ONE turn: a single realization ABOUT the observed thing. Earn it, never announce it.\n- LAND it: the last line makes the scene mean more. Not a moral, not a question.\n- First person ONLY as the honest reaction any reader could have to the fact, never as invented experience. When unsure, narrate the thing, not yourself.\nBANNED: fabricated first-person achievements or history not in context; fake vulnerability; 'a thread'; motivational-poster morals; 'let that sink in'; 'and just like that'; 'plot twist'; opening on 'so' or 'i will never forget'.\n"
+
+_QUESTION_BRIEF = "\nMODE: QUESTION. The genuine engagement question that starts REAL replies, not lazy bait. One specific fork the niche actually argues about, asked so sharply that two smart people would answer differently and both feel they have to explain themselves.\n- PICK A REAL FORK: a concrete tradeoff or disputed claim where costs land on both sides. Name the two sides in specifics, not 'X vs Y' in the abstract. If everyone answers the same way, it is a take with a hook glued on, not a question.\n- SHOW YOUR LEAN: state where YOU stand in one clause, then open the floor. A question you have no opinion on reads as a survey; one you have skin in reads as a conversation.\n- GROUND IT so answers differ on SPECIFICS: tie it to a concrete case so replies argue that case, not vibes.\n- ONE question mark. Ask ONE thing. End ON the question, no trailing 'curious what folks think'.\nBANNED: 'what do you think?', 'thoughts?', 'agree or disagree?', 'am i the only one', 'unpopular opinion:', 'hot take:', generic 'which is better?' polls, engagement-bait arrows, any question with one obvious answer, rhetorical questions you already answered.\n"
+
+_QUOTE_BRIEF = "\nMODE: QUOTE. You are quote-tweeting: the original tweet renders in a card DIRECTLY BELOW your text, and your post broadcasts to YOUR OWN followers. Your line is the value-add, not a caption for theirs. The reader can already see the quoted tweet, so restating it wastes your one line.\n- ADD, do not echo. Contribute exactly one of: a sharper angle, an extension it implies but did not say, the missing piece it skipped, or a respectful counter. Your post must READ AS A COMPLETE THOUGHT on its own, yet mean MORE with the card under it.\n- ASSUME THE READER SAW IT. Never summarize, quote back, or paraphrase the tweet. Open on YOUR point, not theirs.\n- RESPECT THE AUTHOR. Commentary, not a dunk. You are borrowing their reach; punch at the idea or the tradeoff, never the person or the account.\n- STAND ALONE. If your text only parses once someone reads the quoted tweet, you wrote a reply, not a quote.\nBANNED (pointing at the card, not adding to it): summarizing or restating the quoted tweet; 'this ☝️', 'so true', 'this.', 'adding to this:', 'came here to say this', '^^^', '👀'; empty agreement ('100%', 'exactly this', 'facts'); dunking or ratio-bait.\n"
+
+_LISTICLE_BRIEF = "\nMODE: LISTICLE. A list of N things that actually earns being a list: every item a real, specific tactic someone could act on today. The point is that a reader bookmarks it. A padded list is worse than no list.\n- EVERY ITEM IS SPECIFIC AND STANDS ALONE: a concrete tactic, tool, number, or move, not a category. 'batch your replies into one 20-min window' is an item; 'be consistent' is not. If an item would survive being pasted under a different post, it is filler, cut it.\n- LEAD WITH THE MOST USEFUL ITEM. The first item is the strongest. Most readers never reach the last.\n- THE NUMBER IS HONEST. Say exactly as many things as you have. 3 real items beat 7 padded ones. Never invent an item to reach a round number.\n- NO GENERIC TIPS. Banned outright: 'be consistent', 'add value', 'engage authentically', 'post daily', 'provide value', 'be yourself', 'work hard', 'show up'. Horoscopes that fit any subject.\n- NO CLICKBAIT COUNT FRAMING: 'N things NOBODY tells you', 'N secrets', 'the ONE thing', 'N hacks that changed my life'.\n- AS A THREAD: one item per segment, first segment hooks with the count and the single best item. Do NOT number segments '1) 2) 3)'. AS A POST: a short list under 280, line-break separated, no numbering crutch.\nBANNED: filler items to hit a number; generic advice; clickbait count framing; '1) 2) 3)' numbering in a thread; a recap/tl;dr item; restating one item as another.\n"
+
 MODES = {
     "short": {
         "name": "short",
@@ -153,10 +163,25 @@ MODES = {
         "shape": "thread",
         "brief": _THREAD_BRIEF,
     },
+    "contrarian": {"name": "contrarian", "tagline": "consensus fair, then wrong, with the mechanism why. reversal with a receipt.", "model_pref": "either", "shape": "post", "brief": _CONTRARIAN_BRIEF},
+    "story": {"name": "story", "tagline": "a small scene with a turn. narrate what happened, land the feeling, no invented past.", "model_pref": "grok", "shape": "post", "brief": _STORY_BRIEF},
+    "question": {"name": "question", "tagline": "the question that starts a real argument. one sharp fork, your lean shown, not a poll.", "model_pref": "grok", "shape": "post", "brief": _QUESTION_BRIEF},
+    "quote": {"name": "quote", "tagline": "your take rides their reach: add the angle the quoted tweet did not have.", "model_pref": "grok", "shape": "post", "brief": _QUOTE_BRIEF},
+    "listicle": {"name": "listicle", "tagline": "the 'n things' post that earns it: every item a real tactic, no padding.", "model_pref": "either", "shape": "thread", "brief": _LISTICLE_BRIEF},
 }
 
 # Default mode for a given shape when no tone is chosen.
 _SHAPE_DEFAULT_MODE = {"post": "short", "thread": "thread", "longform": "longform"}
+
+
+def fallback_provider_for(mode: str):
+    """A backup provider when the mode's primary fails. codex modes fall back to grok, so a
+    slow/unavailable codex never costs a cron its draft (grok is the fast, reliable path).
+    grok modes have no fallback -- grok IS the reliable one; a grok failure degrades normally."""
+    pref = MODES.get(mode, {}).get("model_pref", "either")
+    if pref == "codex":
+        return _GROK_PROVIDER
+    return None
 
 
 def mode_brief(mode: str) -> str:
