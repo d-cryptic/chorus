@@ -490,8 +490,16 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
                 style={{ fontSize: 15, lineHeight: "20px", color: "var(--foreground)" }} />
               <div className="flex items-center gap-2 mt-2">
                 <Counter text={text} />
-                <button onClick={() => { act(s, "posted_edited", { final_text: text }); setEditing(false); }}
-                  className="ml-auto rounded-full px-4 py-1.5 text-[14px] font-bold" style={{ background: X_BLUE, color: "#fff" }}>Save</button>
+                {/* "Save" marked the suggestion posted_edited but never OPENED X, so the
+                    edit path silently diverged from the post path: Chorus recorded a post
+                    that could not possibly exist unless the user copied the text by hand.
+                    That is precisely the "marked posted, never published" row that wrecked
+                    today's taste analysis. Edit now posts, like the button next to it.
+                    X_BLUE is correct here: this IS the post-on-X action. */}
+                <button onClick={() => { postOnX({ ...s, drafts: JSON.stringify([text]) } as any);
+                                         act(s, "posted_edited", { final_text: text }); setEditing(false); }}
+                  className="ml-auto rounded-full px-4 py-1.5 text-[14px] font-bold"
+                  style={{ background: X_BLUE, color: "#fff" }}>Post edit</button>
                 <button onClick={() => setEditing(false)}
                   className="rounded-full px-4 py-1.5 text-[14px]" style={{ border: `1px solid var(--border)`, color: DIM }}>Cancel</button>
               </div>
@@ -588,9 +596,10 @@ function Blocked({ tone, title, cta, act, href }: any) {
     <div className="px-4 py-6 text-center" style={{ borderBottom: `1px solid ${LINE}` }}>
       <OctagonX size={28} className="mx-auto mb-2" style={{ color: tone }} />
       <p className="text-[15px] font-bold" style={{ color: tone }}>{title}</p>
-      {href ? <a href={href} target="_blank" className="text-[14px] underline" style={{ color: X_BLUE }}>{cta}</a>
+      {/* this CTA goes to the read provider, not to X — so it does not get X's colour */}
+      {href ? <a href={href} target="_blank" className="text-[14px] underline" style={{ color: "var(--primary)" }}>{cta}</a>
             : <button onClick={act} className="mt-2 rounded-full px-4 py-1.5 text-[14px] font-bold"
-                      style={{ background: X_BLUE, color: "#fff" }}>{cta}</button>}
+                      style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}>{cta}</button>}
     </div>
   );
 }
@@ -651,7 +660,10 @@ function Insights({ data }: { data: any }) {
     <div className="flex items-center gap-2 text-[13px] font-mono py-0.5">
       <span className="w-24 truncate text-right" style={{ color: DIM }}>{label}</span>
       <div className="h-1.5 flex-1 rounded-sm" style={{ background: "var(--border)" }}>
-        <div className="h-1.5 rounded-sm" style={{ width: `${pct}%`, background: X_BLUE }} />
+        {/* --primary, NOT X_BLUE: index.css says "X blue ... exists only for things that
+            literally are X ... Nothing else may use it." A data bar is not X, and spending
+            the colour here dilutes the one signal that means "this publishes to X". */}
+        <div className="h-1.5 rounded-sm" style={{ width: `${pct}%`, background: "var(--primary)" }} />
       </div>
       <span style={{ color: DIM }}>{val}</span>
     </div>

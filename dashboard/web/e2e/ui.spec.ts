@@ -205,3 +205,41 @@ test("insights render the verdicts and hide the ones with no data", async ({ pag
   // an insufficient_data insight must NOT be rendered as a claim
   await expect(page.getByText(/insufficient_data/)).toHaveCount(0);
 });
+
+test("X-blue is spent only on things that literally are X", async ({ page }) => {
+  await page.goto("/");
+  // Scan BOTH surfaces. The insight bars only exist on the Insights tab, so a scan of "/"
+  // alone reported clean while the bars were still X-blue — the test could not fail, which
+  // makes it decorative. Verified by re-injecting the violation and watching it go red.
+  await expect(page.getByText("@tom_doerr").first()).toBeVisible();
+  const scan = async () => await page.evaluate(() => {
+  // index.css: "X blue is NOT a Nakama token. It exists only for things that literally are X:
+  // entities inside a tweet body, and the Post-on-X action. Nothing else may use it."
+  // It had leaked onto insight bars and the provider top-up CTA. Spending it on chrome
+  // dilutes the one signal that means "this publishes to X".
+    const cv = document.createElement("canvas"); cv.width = cv.height = 1;
+    const ctx = cv.getContext("2d", { willReadFrequently: true })!;
+    const rgb = (c: string) => { ctx.clearRect(0,0,1,1); ctx.fillStyle = c; ctx.fillRect(0,0,1,1);
+      const d = ctx.getImageData(0,0,1,1).data; return `${d[0]},${d[1]},${d[2]}`; };
+    const X = rgb("#1d9bf0");
+    const hits: string[] = [];
+    document.querySelectorAll("*").forEach((el) => {
+      const cs = getComputedStyle(el);
+      for (const prop of ["backgroundColor", "color"] as const) {
+        const v = cs[prop];
+        if (!v || v === "rgba(0, 0, 0, 0)") continue;
+        if (rgb(v) === X) {
+          const t = (el.textContent || "").trim().slice(0, 24);
+          const isTweetEntity = !!el.closest("[data-tweet-body]") || /^@|^https?:/.test(t);
+          const isPostAction = /post|retweet/i.test(t);
+          if (!isTweetEntity && !isPostAction) hits.push(`${el.tagName}:${t || "(no text)"}`);
+        }
+      }
+    });
+    return hits;
+  });
+  expect(await scan()).toEqual([]);                       // queue surface
+  await page.getByRole("tab", { name: /insights/i }).click();
+  await expect(page.getByText(/What's working/)).toBeVisible();
+  expect(await scan()).toEqual([]);                       // insights surface (where the bars live)
+});
