@@ -2,7 +2,7 @@
 """Measure how your posted replies performed -> feeds rank-tune. Reads posted suggestions with a
 posted_url, looks up the reply's live metrics via the local adapter, POSTs /api/box/outcome.
 Run daily. Env: INGEST_URL, INGEST_TOKEN (+ local candidate_source for the metrics lookup)."""
-import os, json, re, urllib.request
+import os, json, re, time, urllib.request
 
 def _req(url, method="GET", token=None, body=None):
     r = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, method=method)
@@ -10,6 +10,41 @@ def _req(url, method="GET", token=None, body=None):
     r.add_header("content-type", "application/json")
     if token: r.add_header("authorization", "Bearer " + token)
     with urllib.request.urlopen(r, timeout=20) as resp: return json.loads(resp.read() or "{}")
+
+def _norm(t):
+    import re
+    t = re.sub(r"@\w+", " ", (t or "").lower())        # strip the @mentions X prepends
+    t = re.sub(r"https?://\S+", " ", t)
+    return set(w for w in re.findall(r"[a-z0-9']+", t) if len(w) > 3)
+
+
+def discover_posted(handle, key, *, now=None, pages=1):
+    """Find YOUR replies on X and match them to the suggestions they came from.
+
+    posted_url was optional in the UI and you skipped it on 8/8 — correctly, it is friction.
+    But that meant outcome_track could never measure ANYTHING, so rank_tune's engagement
+    signal was permanently empty. Your replies are public: fetch them and match by token
+    overlap against the draft we suggested. No pasting, no extra step for you.
+    """
+    import candidate_source as cs
+    mine = cs._fetch(f"from:{handle} filter:replies", key, max_pages=pages, now=now)
+    return mine
+
+
+def match(reply_text, drafts, *, min_overlap=0.45):
+    """Is this reply one of our drafts? Jaccard over content words — the user edits lightly,
+    so exact match is too strict and substring is too loose."""
+    a = _norm(reply_text)
+    best, score = None, 0.0
+    for d in drafts or []:
+        b = _norm(d)
+        if not a or not b:
+            continue
+        j = len(a & b) / max(1, len(a | b))
+        if j > score:
+            best, score = d, j
+    return (best, round(score, 3)) if score >= min_overlap else (None, round(score, 3))
+
 
 def main():
     base = os.environ.get("INGEST_URL", "http://localhost:8787").rstrip("/"); tok = os.environ.get("INGEST_TOKEN", "")
@@ -29,7 +64,42 @@ def main():
         _req(f"{base}/api/box/outcome", "POST", tok,
              {"suggestion_id": p["id"], "likes": mx["likes"], "replies": mx["replies"], "profile_clicks": 0})
         n += 1
-    print(f"measured {n} posted replies")
+    print(f"measured {n} via posted_url")
+
+    # FALLBACK — the path that actually fires. posted_url is optional in the UI and was
+    # skipped on 8/8 real posts (it is friction), so the URL path measured NOTHING and
+    # rank_tune's engagement signal was permanently empty. Your replies are public: fetch
+    # them and match by token overlap against the draft we suggested. Zero extra steps.
+    key = os.environ.get("CANDIDATE_API_KEY", "")
+    handle = os.environ.get("CHORUS_HANDLE", "")
+    if not (key and handle):
+        return
+    now = int(time.time() * 1000)
+    try:
+        mine = discover_posted(handle, key, now=now)
+    except Exception as e:
+        print(f"  discovery failed: {repr(e)[:44]}"); return
+    fb = _req(f"{base}/api/box/feedback?since=0", token=tok).get("feedback", [])
+    posted = [f for f in fb if (f.get("action") or "").startswith("posted") and f.get("posted_text")]
+    seen, d = 0, 0
+    for t in mine:
+        for f in posted:
+            best, sc = match(t.get("text") or "", [f["posted_text"]])
+            if not best:
+                continue
+            sid = f.get("suggestion_id") or f.get("id")
+            try:
+                _req(f"{base}/api/box/outcome", "POST", tok,
+                     {"suggestion_id": sid,
+                      "likes": t.get("like_count") or 0,
+                      "replies": t.get("reply_count") or 0,
+                      "profile_clicks": 0})
+                d += 1
+            except Exception:
+                pass
+            break
+        seen += 1
+    print(f"discovered {len(mine)} of your replies, matched+measured {d} (no URL needed)")
 
 if __name__ == "__main__":
     main()

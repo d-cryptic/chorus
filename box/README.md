@@ -467,3 +467,25 @@ timezone.
 `CHORUS_TZ_OFFSET_H` (default 5.5) is the user's UTC offset and MUST be used for every
 "is he awake?" decision. The box runs UTC: `time.localtime()` there made the quiet window
 mean 06:30–13:29 IST, i.e. it skipped the morning and polled the sleep. Exactly inverted.
+
+## outcome_track: measures your replies without asking you for URLs
+
+`posted_url` is optional in the UI and was skipped on **8/8** real posts — correctly, it is
+friction. But the only measurement path required it, so `outcome_track` measured **nothing**
+and rank_tune's engagement signal was permanently empty. It would have looked healthy while
+learning from zero.
+
+Now it discovers your replies (`from:<handle> filter:replies` — they are public) and matches
+them to the draft we suggested by **Jaccard token overlap** (≥0.45; exact match is too
+strict because you edit lightly, substring too loose). Live: `discovered 20 of your replies,
+matched+measured 2` at 1.00 overlap. Zero extra steps for you.
+
+Known gap: only *replies* are discoverable this way — `post`/`quote` targets need a
+different query lane.
+
+## Known bias: draft#0 is over-picked
+
+Real data: you picked draft **#0 ×4, #1 ×2, #2 ×1**. That is probably **position bias, not
+preference** — the picker renders #0 full-size and collapses the rest, so #0 is the path of
+least resistance. If rank_tune learns "draft#0's style wins" from *layout*, it learns
+garbage. Worth randomising render order, or weighting the signal down, before trusting it.
