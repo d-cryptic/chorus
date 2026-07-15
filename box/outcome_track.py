@@ -19,16 +19,31 @@ def _norm(t):
 
 
 def discover_posted(handle, key, *, now=None, pages=1):
-    """Find YOUR replies on X and match them to the suggestions they came from.
+    """Find EVERYTHING you posted on X and match it to the suggestions it came from.
 
-    posted_url was optional in the UI and you skipped it on 8/8 — correctly, it is friction.
-    But that meant outcome_track could never measure ANYTHING, so rank_tune's engagement
-    signal was permanently empty. Your replies are public: fetch them and match by token
-    overlap against the draft we suggested. No pasting, no extra step for you.
+    posted_url was optional in the UI and you skipped it on 10/10 — correctly, it is friction.
+    Without it outcome_track could measure nothing, so rank_tune's engagement signal was
+    permanently empty. Your tweets are public: fetch them and match by token overlap against
+    the draft we suggested. No pasting, no extra step.
+
+    `filter:replies` used to be hardcoded here, so this discovered ONLY replies. Measured:
+    of 10 posted suggestions, 3 were replies and 7 were posts/quotes — structurally invisible
+    to a reply search. The reward signal was 70% blind by construction, and rank_tune fell
+    back to follower attribution at n=2. Two queries now: replies AND originals.
     """
     import candidate_source as cs
-    mine = cs._fetch(f"from:{handle} filter:replies", key, max_pages=pages, now=now)
-    return mine
+    out, seen = [], set()
+    for q in (f"from:{handle} filter:replies",      # replies to anchors
+              f"from:{handle} -filter:replies"):    # your own posts AND quote-tweets
+        try:
+            for t in cs._fetch(q, key, max_pages=pages, now=now):
+                tid = t.get("id")
+                if tid and tid not in seen:
+                    seen.add(tid)
+                    out.append(t)
+        except Exception as e:
+            print(f"  discover ({q.split()[-1]}) failed: {repr(e)[:40]}")
+    return out
 
 
 def match(reply_text, drafts, *, min_overlap=0.45):

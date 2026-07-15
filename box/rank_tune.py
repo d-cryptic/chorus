@@ -110,11 +110,20 @@ def main():
             # proxy that diverges badly — a viral joke earns 500 likes and 0 follows, a
             # sharp technical take earns 20 likes and 5 follows. Tuning on likes taught
             # the ranker to chase the wrong thing.
+            # "posted" means the user CLICKED Post on X. The intent URL only opens X's
+            # composer; they still have to hit Post. Measured against their real timeline:
+            # only 4 of 10 "posted" suggestions are actually ON X. A click is a genuine
+            # preference signal (they liked it enough to open it) but it is weaker than an
+            # act, so it must not carry the same vote as a tweet that really shipped.
+            # outcome_track sets likes/replies only for suggestions it FOUND on X.
+            verified = f.get("likes") is not None
             gained = fol_for(f.get("ts"))
             if gained is not None:
                 w = 1.0 + gained * 3.0          # followers dominate when we have the data
             else:                                # no snapshot covers this reply yet
                 w = 1.0 + ((f.get("likes") or 0) + 2 * (f.get("replies") or 0)) / 10
+            if not verified:
+                w *= 0.5                         # an intent, not an act
             nP += w
             for k, v in _numeric(fac).items(): pos[k] = pos.get(k, 0) + v * w
         else:

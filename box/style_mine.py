@@ -282,8 +282,16 @@ def main():
             base_i = os.environ.get("INGEST_URL", "").rstrip("/")
             tok = os.environ.get("INGEST_TOKEN", "")
             fb = _req(f"{base_i}/api/box/feedback?since=0", token=tok).get("feedback", [])
+            # VERIFIED posts only. "posted" in Chorus means the user CLICKED Post on X — the
+            # intent URL merely opens X's composer, and they still have to hit Post there.
+            # Measured against their real timeline (120 tweets, a year of history): only 4 of
+            # 10 "posted" suggestions actually exist on X. Six were clicked and abandoned.
+            # Learning taste from a signal that is 60% false is worse than learning nothing;
+            # outcome_track sets likes/replies only for suggestions it FOUND on X, so a
+            # non-null likes IS the verification. Below MIN_SAMPLE this correctly refuses.
             posted = [f.get("posted_text") for f in fb
-                      if (f.get("action") or "").startswith("posted") and f.get("posted_text")]
+                      if (f.get("action") or "").startswith("posted") and f.get("posted_text")
+                      and f.get("likes") is not None]
             ignored = []
             for f in fb:
                 if f.get("action") != "expired":

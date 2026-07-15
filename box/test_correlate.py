@@ -100,5 +100,25 @@ def run():
     chk(nsrc.index("chorus:self:taste") < nsrc.index("chorus:niche"),
         "taste is read BEFORE niche: the user's own taste outranks other people's patterns")
 
+    # --- "posted" is a CLICK, not an act -------------------------------------------------
+    # The intent URL only OPENS X's composer; the user still has to hit Post there. Measured
+    # against their real timeline (120 tweets, a year of history, 3 pages per lane so "not
+    # found" cannot be a window artifact): only 4 of 10 "posted" suggestions actually exist
+    # on X. Six were clicked and abandoned. Every taste/acceptance conclusion drawn from raw
+    # "posted" is therefore 60% contaminated — including the one I shipped earlier today
+    # ("you post statements, not questions"), which the MIN_SAMPLE guard correctly REFUSES to
+    # make once the input is honest (4 verified < 5 needed).
+    # outcome_track sets likes/replies only for suggestions it FOUND on X, so a non-null
+    # `likes` IS the verification.
+    import inspect
+    ssrc = inspect.getsource(S.main)
+    chk('f.get("likes") is not None' in ssrc, "taste counts only VERIFIED posts")
+    import rank_tune as RT
+    rsrc = inspect.getsource(RT.main)
+    chk('verified = f.get("likes") is not None' in rsrc, "rank_tune knows verified from claimed")
+    chk("w *= 0.5" in rsrc, "an unverified click is half a vote, not a full one")
+    # and it must still COUNT: a click is a real preference signal, just a weaker one
+    chk("w *= 0.0" not in rsrc, "a click is not discarded — they liked it enough to open X")
+
     print(f"CORRELATE UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())
