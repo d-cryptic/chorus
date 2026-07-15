@@ -79,5 +79,36 @@ def run():
         chk(composes or reads,
             f"window.open only composes (intent) or reads (a tweet URL): {o[:60]}")
 
+    # ---- auth must fail CLOSED. If it fails open, the user's private queue is public. ----
+    # The Worker had zero tests. verifyAccess is well built — DEV_OPEN gated by hostname,
+    # missing config returns false, a bad JWT returns false, the email must match — but every
+    # one of those is one careless edit from failing OPEN, and nothing checked them.
+    # Read as text on purpose: no worker deps, no network, no runner. The bug class lives here.
+    wsrc = open(os.path.join(root, "dashboard", "src", "index.ts"), encoding="utf-8").read()
+    va = wsrc[wsrc.index("async function verifyAccess"):]
+    va = va[:va.index("\n}")]
+
+    chk("DEV_OPEN" in va, "the dev escape hatch is in verifyAccess (else this test is aimed wrong)")
+    # the escape MUST be gated on hostname, or DEV_OPEN=1 in prod turns auth off entirely
+    dev_line = next(l for l in va.split("\n") if "DEV_OPEN" in l and "if" in l)
+    # NB: the source holds the REGEX `127\.` (escaped), so a naive `"127." in line` is False
+    # and would fail on correct code — my first version did exactly that.
+    chk("localhost" in dev_line and "127" in dev_line,
+        "DEV_OPEN is gated on localhost — a prod DEV_OPEN=1 must NOT disable auth")
+    chk("url.hostname" in dev_line, "...and the gate reads the real hostname")
+
+    # every failure path must return FALSE, never true
+    chk("catch" in va and re.search(r"catch\s*\{\s*\n?\s*return false", va),
+        "a JWT that fails verification -> false (fail CLOSED)")
+    chk(re.search(r"if \(!token \|\| !env\.ACCESS_TEAM_DOMAIN \|\| !env\.ACCESS_AUD\) return false", va),
+        "missing token or Access config -> false (a misconfigured deploy is CLOSED, not open)")
+    chk("payload.email === env.ALLOWED_EMAIL" in va,
+        "a VALID token for the wrong person is still refused")
+    chk("issuer: iss" in va and "audience: env.ACCESS_AUD" in va,
+        "the JWT is checked against issuer AND audience (a token from another team is not enough)")
+    # `return true` may appear ONCE: the localhost dev escape. Anywhere else is a hole.
+    chk(va.count("return true") == 1,
+        f"exactly ONE `return true` in verifyAccess (found {va.count('return true')})")
+
     print(f"INVARIANT UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())

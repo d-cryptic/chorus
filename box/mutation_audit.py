@@ -31,6 +31,12 @@ MUTANTS = [
     ("../dashboard/src/index.ts", "gif, thread, longform, media, status",
      "gif, thread, longform, media, extra_col, status",
      "WORKER SQL: INSERT column/value arity broken"),
+    # If auth fails OPEN, the user's private queue and every draft in it are public.
+    ("../dashboard/src/index.ts", "return payload.email === env.ALLOWED_EMAIL;", "return true;",
+     "AUTH: any valid Access token accepted, not just the owner"),
+    ("../dashboard/src/index.ts", 'if (env.DEV_OPEN === "1" && /^(localhost|127\\.|0\\.0\\.0\\.0)/.test(url.hostname)) return true;',
+     'if (env.DEV_OPEN === "1") return true;',
+     "AUTH: DEV_OPEN disables auth in PROD"),
     # --dry-run was a hole straight through the breaker: fake $10 ceiling, real paid calls.
     ("post_gen.py", "if not args.no_budget:\n        flush_spend", "if False:\n        flush_spend",
      "BUDGET: dry-run spend goes unbooked again"),
