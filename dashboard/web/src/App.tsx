@@ -208,6 +208,14 @@ export default function App() {
   };
   const postOnX = (s: Sug) => {
     const t = selected(s);
+    if (s.target === "reddit") {
+      // Reddit has no post-intent URL: open the thread, the human pastes the drafted comment.
+      // Suggest-only holds -- Chorus never posts to Reddit either.
+      if (t) navigator.clipboard?.writeText(t).catch(() => {});
+      window.open(s.tweet_url || "https://reddit.com", "_blank");
+      act(s, "posted", { posted_url: null });
+      return;
+    }
     window.open(s.target === "retweet" && s.tweet_id
       ? `https://x.com/intent/retweet?tweet_id=${s.tweet_id}` : intent(s, t), "_blank");
     act(s, "posted", { posted_url: null });
@@ -457,6 +465,7 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
   useEffect(() => { if (focused) ref.current?.scrollIntoView({ block: "nearest" }); }, [focused]);
   useEffect(() => { setText(body); }, [body]);
   const isRT = s.target === "retweet";
+  const isReddit = s.target === "reddit";
   const isPost = s.target === "post";
 
   return (
@@ -661,7 +670,8 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
           <button onClick={() => postOnX(s)}
                   className="rounded-full px-4 py-1.5 text-[13.5px] font-semibold transition-transform active:scale-[.97]"
                   style={{ background: "var(--x-blue)", color: "#fff" }}>   {/* X-native action: the one sanctioned use */}
-            {isRT ? "Retweet on X"
+            {isReddit ? "Comment on Reddit"
+              : isRT ? "Retweet on X"
               : shape === "thread" ? `Post thread (${thread.length})`
               : shape === "longform" ? "Post long"
               : isPost ? "Post this" : "Post on X"} <span className="opacity-60">(p)</span>
