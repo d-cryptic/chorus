@@ -403,6 +403,33 @@ def classify_shape(idea, *, model, api_key, tracker=None):
                 return "post", f"classify failed: {repr(e)[:40]}"
     return "post", "empty response after 3 tries"
 
+def analytics_context(base, token):
+    """A compact 'what has actually worked for you' block from the insights engine, for the
+    draft prompt. Analytics is otherwise only implicit (via chorus:niche); this surfaces the
+    user's OWN outcome-backed insights (winning_shape/format) directly. Empty when the sample
+    is too thin (the insight engine's MIN_SAMPLE guard refuses low-n claims), which is correct:
+    no fabricated 'what works' at n=0. Best-effort, never blocks a draft."""
+    try:
+        rows = _req(f"{base}/api/box/insights", token=token).get("insights", []) or []
+    except Exception:
+        return ""
+    keep = []
+    for r in rows:
+        kind = r.get("kind") or ""
+        if kind not in ("winning_shape", "winning_format", "dominant_topic"):
+            continue
+        pay = r.get("payload")
+        import json as _j
+        pay = _j.loads(pay) if isinstance(pay, str) else (pay or {})
+        claim = pay.get("claim") or pay.get("summary") or ""
+        if claim and (r.get("confidence") or 0) > 0:
+            keep.append(f"- {claim}")
+    if not keep:
+        return ""
+    return ("\n<what_works>  # your OWN measured results. Lean toward these, do not contradict "
+            "them.\n" + "\n".join(keep[:4]) + "\n</what_works>\n")
+
+
 def classify_mode(idea, shape, *, model, api_key, tracker=None, grounded=False):
     """Pick the best CONTENT MODE (style/fidelity) for an idea, from the candidates for its shape.
 
@@ -476,6 +503,12 @@ def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker
     # (research/announcement/prediction) quote REAL facts instead of inventing them. For the
     # research mode specifically, also run a web search when a provider is configured.
     grounding = ""
+    try:
+        _b = os.environ.get("INGEST_URL", "http://localhost:8787").rstrip("/")
+        _t = os.environ.get("INGEST_TOKEN", "")
+        grounding += analytics_context(_b, _t)   # what has worked for YOU (own outcomes)
+    except Exception:
+        pass
     try:
         _url = idea.get("url") or ""
         if _url:
