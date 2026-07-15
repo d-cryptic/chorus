@@ -91,3 +91,52 @@ test("Fetch button says what it does, and reload admits it does not fetch", asyn
   await page.goto("/");
   await expect(page.getByRole("button", { name: /Fetch new/ })).toBeVisible();
 });
+
+test("palette meets WCAG AA, and the focus ring is not the dimmest colour in it", async ({ page }) => {
+  await page.goto("/");
+  // NB: getComputedStyle returns oklch() verbatim here. Parsing that with a regex yields
+  // nonsense (I measured "1.06:1, text invisible" that way and nearly "fixed" a palette that
+  // was already fine). Let the browser convert: paint it, read the pixel.
+  const r = await page.evaluate(() => {
+    const cv = document.createElement("canvas"); cv.width = cv.height = 1;
+    const ctx = cv.getContext("2d", { willReadFrequently: true })!;
+    const rgb = (css: string) => { ctx.clearRect(0,0,1,1); ctx.fillStyle = css; ctx.fillRect(0,0,1,1);
+      const d = ctx.getImageData(0,0,1,1).data; return [d[0],d[1],d[2]]; };
+    const lum = ([r,g,b]: number[]) => { const f=(v:number)=>{v/=255;return v<=0.03928?v/12.92:((v+0.055)/1.055)**2.4;};
+      return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b); };
+    const ratio = (a: string, b: string) => { const la=lum(rgb(a)), lb=lum(rgb(b));
+      return (Math.max(la,lb)+0.05)/(Math.min(la,lb)+0.05); };
+    const cs = getComputedStyle(document.documentElement);
+    const v = (n: string) => cs.getPropertyValue(n).trim();
+    const bg = v("--card");
+    return {
+      foreground: ratio(v("--foreground"), bg),
+      muted: ratio(v("--muted-foreground"), bg),
+      primary: ratio(v("--primary"), bg),
+      primaryVsMuted: lum(rgb(v("--primary"))) / lum(rgb(v("--muted-foreground"))),
+    };
+  });
+  expect(r.foreground).toBeGreaterThanOrEqual(4.5);   // body text
+  expect(r.muted).toBeGreaterThanOrEqual(4.5);        // meta rows, tabs, counters
+  expect(r.primary).toBeGreaterThanOrEqual(3);        // accent / focus ring, large-element use
+});
+
+test("the focused card is unmistakable — it is a keyboard triage tool", async ({ page }) => {
+  await page.goto("/");
+  // page.evaluate does NOT auto-wait like expect() does, so anchor on rendered content first
+  // or you measure an empty React root and "prove" the ring is missing.
+  await expect(page.getByText("@tom_doerr").first()).toBeVisible();
+  // The focus ring used to be painted in --muted-foreground, the dimmest colour available,
+  // for the single most important affordance in a j/k tool.
+  const ring = await page.evaluate(() => {
+    const el = [...document.querySelectorAll("div")].find(d => getComputedStyle(d).boxShadow.includes("inset"));
+    return el ? getComputedStyle(el).boxShadow : null;
+  });
+  expect(ring).toBeTruthy();
+  expect(ring).not.toContain("oklch(0.7 0.012 110)");   // --muted-foreground
+  // j moves focus to the next card, and the ring must move with it
+  await page.keyboard.press("j");
+  const count = await page.evaluate(() =>
+    [...document.querySelectorAll("div")].filter(d => getComputedStyle(d).boxShadow.includes("inset")).length);
+  expect(count).toBe(1);   // exactly one card focused, never zero or two
+});

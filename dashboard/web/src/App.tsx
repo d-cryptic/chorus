@@ -388,8 +388,22 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
 
   return (
     <div ref={ref} onClick={onFocus}
-         style={{ borderBottom: `1px solid var(--border)`, boxShadow: focused ? "inset 2px 0 0 var(--muted-foreground)" : undefined, animationDelay: `${Math.min(i, 6) * 28}ms` }}
-         className={cn("rise transition-colors", focused ? "bg-[var(--card)]" : "hover:bg-card")}>
+         style={{
+           // Separation must track HIERARCHY. A card is a compound object (target tweet +
+           // your draft + actions) whose parts are already hairline-separated; bounding the
+           // whole card with that same hairline made the stream undifferentiated -- the next
+           // card's meta row read as this card's footer. A gutter of page background makes
+           // each card a distinct slab without floating it (X stays flush; the unit here is
+           // bigger than a tweet, so it needs more).
+           borderBottom: `8px solid var(--background)`,
+           // The focus ring is the single most important affordance in a j/k triage tool and
+           // it was painted in --muted-foreground, the dimmest colour in the palette. It is
+           // the "you are here", so it gets the accent.
+           boxShadow: focused ? "inset 3px 0 0 var(--primary)" : undefined,
+           animationDelay: `${Math.min(i, 6) * 28}ms`,
+         }}
+         className={cn("rise transition-colors bg-[var(--card)]",
+                       focused ? "" : "opacity-[0.94] hover:opacity-100")}>
       {/* Chorus chrome — an instrument, deliberately not X */}
       <div className="mono flex items-center gap-2 px-4 pt-3 text-[11px] tracking-tight" style={{ color: "var(--muted-foreground)" }}>
         {parse(s.factors, {})?.fast_lane ? (
