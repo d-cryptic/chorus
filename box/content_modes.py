@@ -208,5 +208,29 @@ def default_mode_for_shape(shape: str) -> str:
     return _SHAPE_DEFAULT_MODE.get(shape, "short")
 
 
+# Which modes are candidates for a given shape (the classifier picks among these).
+_CANDIDATES = {
+    "post": ["short", "sarcastic", "humor", "contrarian", "question", "story",
+             "announcement", "prediction", "analogy"],
+    "thread": ["thread", "listicle", "explainer"],
+    "longform": ["longform", "explainer"],
+}
+
+
+def candidates_for_shape(shape: str, *, grounded: bool = False) -> list:
+    """Modes the auto-selector may choose for a shape. `research` is only a candidate when the
+    idea has real grounding (a link/corroboration) -- it must never be picked with nothing to
+    stand on, mirroring the research mode's own WHEN_TO_USE."""
+    out = list(_CANDIDATES.get(shape, _CANDIDATES["post"]))
+    if grounded and "research" not in out:
+        out.insert(0, "research")
+    return out
+
+
+def taglines_for(modes: list) -> str:
+    """A compact 'name: tagline' menu for the classifier prompt."""
+    return "\n".join(f"- {m}: {MODES[m]['tagline']}" for m in modes if m in MODES)
+
+
 def list_modes() -> list:
     return list(MODES.keys())

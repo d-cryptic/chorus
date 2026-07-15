@@ -135,6 +135,15 @@ def run():
     chk(CM.MODES["announcement"]["model_pref"] == "codex" and CM.MODES["prediction"]["model_pref"] == "codex" and CM.MODES["explainer"]["model_pref"] == "codex", "announcement+prediction+explainer -> codex")
     chk(CM.fallback_provider_for("announcement") == "hermes:xai-oauth:grok-4.5", "announcement (codex) falls back to grok")
 
+
+    # --- auto-selection candidates ---
+    chk("research" not in CM.candidates_for_shape("post"), "post candidates exclude research unless grounded")
+    chk(CM.candidates_for_shape("post", grounded=True)[0] == "research", "grounded post -> research is a candidate")
+    chk("sarcastic" in CM.candidates_for_shape("post") and "humor" in CM.candidates_for_shape("post"), "post candidates include tone modes")
+    chk(CM.candidates_for_shape("thread") == ["thread", "listicle", "explainer"], "thread candidates")
+    chk(CM.candidates_for_shape("longform") == ["longform", "explainer"], "longform candidates")
+    chk("short:" in CM.taglines_for(["short"]), "taglines_for renders the menu")
+
     print(f"CONTENT MODES UNIT: {p} passed, {f} failed")
     return 1 if f else 0
 
