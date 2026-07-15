@@ -549,16 +549,26 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
                   <div className="mt-2"><Counter text={body} /></div>
                 </Tweet>
               )}
-              {/* draft picker — one full render, the rest collapsed. 3 stacked fake tweets
-                  triples scroll and makes the real target tweet visually equal to drafts. */}
+              {/* Draft picker. The old note said "3 stacked fake tweets triples scroll and
+                  makes the real target tweet visually equal to drafts" — true when written,
+                  and the fix was to truncate the alternatives to 80 chars AND clip them with
+                  CSS on top. But a draft is ~140 chars, so you saw half of one and had to
+                  click to read the rest, then click back. You cannot judge an option you
+                  cannot read.
+                  The second half of that objection is now obsolete: the target tweet renders
+                  as `context` and visibly recedes, so a draft can no longer be mistaken for
+                  it. Two lines each costs ~20px on a 550px card and buys you the actual
+                  comparison the picker exists for. */}
               {(drafts.length > 1 || shape !== "post") && (
                 <div className="px-4 pb-2">
                   {(order || drafts.map((_: any, k: number) => k)).map((real: number, posn: number) =>
                     (real === pick && shape === "post") ? null : (
                     <button key={real} onClick={() => setPick(real)}
-                      className="block w-full text-left text-[12.5px] py-1.5 pl-[52px] pr-2 truncate transition-colors hover:text-[var(--foreground)]"
-                      style={{ color: "var(--muted-foreground)" }}>
-                      <span className="mono mr-1.5 opacity-60">{posn + 1}</span>{(drafts[real] || "").slice(0, 80)}
+                      className="block w-full text-left text-[12.5px] leading-[17px] py-1.5 pl-[52px] pr-3 transition-colors hover:text-[var(--foreground)]"
+                      style={{ color: "var(--muted-foreground)",
+                               display: "-webkit-box", WebkitLineClamp: 2, WebkitBoxOrient: "vertical",
+                               overflow: "hidden" }}>
+                      <span className="mono mr-1.5 opacity-60">{posn + 1}</span>{drafts[real] || ""}
                     </button>
                   ))}
                 </div>

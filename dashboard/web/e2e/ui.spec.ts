@@ -285,3 +285,19 @@ test("the header heartbeat says something true", async ({ page }) => {
   await expect(page.getByText(/3 new/)).toBeVisible();        // ...and 3 suggestions from it
   await expect(page.getByText(/0h ago/)).toHaveCount(0);      // the old lie
 });
+
+test("you can read the alternative drafts without clicking them", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText("@tom_doerr").first()).toBeVisible();
+  // The picker used to .slice(0, 80) AND clip with CSS on top, so a ~140-char draft showed
+  // half of one line: you had to click to read an option, then click back. You cannot judge
+  // an option you cannot read, and comparing options is the only thing the picker is for.
+  const alts = await page.evaluate(() =>
+    [...document.querySelectorAll("button")]
+      .filter((b) => b.querySelector("span.mono") && ((b as HTMLElement).innerText || "").length > 20)
+      .map((b) => ((b as HTMLElement).innerText || "").replace(/\n/g, " ")));
+  expect(alts.length).toBeGreaterThan(0);
+  const long = alts.find((a) => a.length > 80);
+  expect(long).toBeTruthy();                       // a genuinely long alternative exists
+  expect(long).toContain("offline for a week.");   // ...and its END is visible, not clipped
+});
