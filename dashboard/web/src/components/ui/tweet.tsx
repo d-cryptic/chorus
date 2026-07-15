@@ -37,10 +37,11 @@ function Avatar({ handle, size = 40 }: { handle: string; size?: number }) {
   );
 }
 
-export function TweetText({ text }: { text: string }) {
+export function TweetText({ text, dim }: { text: string; dim?: boolean }) {
   const parts = (text || "").split(/(https?:\/\/\S+|@\w{1,15}|#\w+)/g);
   return (
-    <div className="x-body whitespace-pre-wrap break-words" style={{ color: "var(--foreground)" }}>
+    <div className="x-body whitespace-pre-wrap break-words"
+         style={{ color: dim ? "var(--muted-foreground)" : "var(--foreground)" }}>
       {parts.map((p, i) =>
         /^(https?:\/\/|@|#)/.test(p) ? <span key={i} style={{ color: X_BLUE }}>{p}</span> : <span key={i}>{p}</span>
       )}
@@ -56,14 +57,20 @@ function age(ts?: number) {
 }
 
 export function Tweet({
-  handle, name, text, replyingTo, ts, connector, children,
+  handle, name, text, replyingTo, ts, connector, context, children,
 }: {
   handle: string; name?: string; text: string; replyingTo?: string;
-  ts?: number; connector?: boolean; children?: React.ReactNode;
+  ts?: number; connector?: boolean; context?: boolean; children?: React.ReactNode;
 }) {
   const a = age(ts);
+  // `context` = the tweet you are REPLYING TO. It and your draft used to render identically:
+  // same avatar, same size, same weight — so every card made you read "Replying to @x" just
+  // to work out which was which, 40 times a session. They are not the same kind of thing.
+  // Theirs is settled fact you are reacting to; yours is the ONLY thing you act on. The
+  // hierarchy should be handed to you, not re-derived. Theirs recedes; yours stays full.
   return (
-    <div className="flex gap-3 px-4 pt-3.5">
+    <div className={cn("flex gap-3 px-4 pt-3.5", context && "pb-0.5")}
+         style={context ? { background: "color-mix(in oklch, var(--background) 55%, transparent)" } : undefined}>
       <div className="flex flex-col items-center shrink-0">
         <Avatar handle={handle} />
         {/* X's thread connector: a rail from this avatar to the next. X does NOT indent. */}
@@ -71,7 +78,8 @@ export function Tweet({
       </div>
       <div className="min-w-0 flex-1 pb-3.5">
         <div className="x-body flex items-center gap-1">
-          <span className="font-bold truncate" style={{ color: "var(--foreground)" }}>{name || handle.replace(/^@/, "")}</span>
+          <span className="font-bold truncate"
+                style={{ color: context ? "var(--muted-foreground)" : "var(--foreground)" }}>{name || handle.replace(/^@/, "")}</span>
           <span className="truncate" style={{ color: DIM }}>@{handle.replace(/^@/, "")}</span>
           {a && <><span style={{ color: DIM }}>·</span><span style={{ color: DIM }}>{a}</span></>}
         </div>
@@ -80,7 +88,7 @@ export function Tweet({
             Replying to <span style={{ color: X_BLUE }}>@{replyingTo.replace(/^@/, "")}</span>
           </div>
         )}
-        <TweetText text={text} />
+        <TweetText text={text} dim={context} />
         {children}
       </div>
     </div>

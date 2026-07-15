@@ -476,7 +476,11 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
           </span>
         </a>
       ) : (
-        <Tweet handle={s.author_handle} text={s.tweet_text} ts={s.created_at}>
+        // `context`: this is THEIRS, settled fact you are reacting to. Your draft below is
+        // the only thing you act on, so it keeps full weight. They used to render
+        // identically, which made every card a small puzzle: read "Replying to @x" to work
+        // out which was which, 40 times a session.
+        <Tweet handle={s.author_handle} text={s.tweet_text} ts={s.created_at} context>
           <MediaGrid media={parse(s.media, [])} />
         </Tweet>
       )}

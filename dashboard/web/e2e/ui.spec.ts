@@ -243,3 +243,34 @@ test("X-blue is spent only on things that literally are X", async ({ page }) => 
   await expect(page.getByText(/What's working/)).toBeVisible();
   expect(await scan()).toEqual([]);                       // insights surface (where the bars live)
 });
+
+test("the tweet you're replying to recedes; your draft does not", async ({ page }) => {
+  await page.goto("/");
+  // page.evaluate does NOT auto-wait like expect() does, so anchor on rendered content first
+  // or you measure an empty React root and get `undefined`. Third time I have hit this.
+  await expect(page.getByText("@tom_doerr").first()).toBeVisible();
+  // They used to render identically — same avatar, size and weight — so every card was a
+  // small puzzle: read "Replying to @x" to work out which was which, 40 times a session.
+  // They are not the same kind of thing. Theirs is settled fact you react to; yours is the
+  // only thing you act on. The hierarchy should be handed over, not re-derived.
+  const contrasts = await page.evaluate(() => {
+    const cv = document.createElement("canvas"); cv.width = cv.height = 1;
+    const ctx = cv.getContext("2d", { willReadFrequently: true })!;
+    const rgb = (c: string) => { ctx.clearRect(0,0,1,1); ctx.fillStyle = c; ctx.fillRect(0,0,1,1);
+      const d = ctx.getImageData(0,0,1,1).data; return [d[0],d[1],d[2]]; };
+    const lum = ([r,g,b]: number[]) => { const f=(v:number)=>{v/=255;return v<=0.03928?v/12.92:((v+0.055)/1.055)**2.4;};
+      return 0.2126*f(r)+0.7152*f(g)+0.0722*f(b); };
+    const ratio = (el: Element) => {
+      const fg = getComputedStyle(el).color;
+      let bg = "rgba(0, 0, 0, 0)", n: Element | null = el;
+      while (n && bg === "rgba(0, 0, 0, 0)") { bg = getComputedStyle(n).backgroundColor; n = n.parentElement; }
+      const la = lum(rgb(fg)), lb = lum(rgb(bg));
+      return (Math.max(la,lb)+0.05)/(Math.min(la,lb)+0.05);
+    };
+    const bodies = [...document.querySelectorAll(".x-body")].filter(e => ((e as HTMLElement).innerText||"").length > 30);
+    return bodies.slice(0, 2).map((e) => ratio(e));
+  });
+  const [theirs, yours] = contrasts;
+  expect(yours).toBeGreaterThan(theirs * 1.5);   // the hierarchy is real, not decorative
+  expect(theirs).toBeGreaterThanOrEqual(4.5);    // ...but theirs still clears WCAG AA
+});
