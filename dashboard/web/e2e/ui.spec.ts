@@ -274,3 +274,14 @@ test("the tweet you're replying to recedes; your draft does not", async ({ page 
   expect(yours).toBeGreaterThan(theirs * 1.5);   // the hierarchy is real, not decorative
   expect(theirs).toBeGreaterThanOrEqual(4.5);    // ...but theirs still clears WCAG AA
 });
+
+test("the header heartbeat says something true", async ({ page }) => {
+  await page.goto("/");
+  // Was `${Math.round(ms / 3.6e6)}h ago · ${n}`. Rounding to HOURS meant a cycle 5 minutes
+  // old and one 29 minutes old both read "0h ago", and Math.round made "1h ago" mean 31
+  // minutes — actively wrong. The bare trailing number was unlabelled: 3 of what?
+  // This is the one line telling you the system is alive. It should not need decoding.
+  await expect(page.getByText(/ran 4m ago/)).toBeVisible();   // fixture: last run 4 min ago
+  await expect(page.getByText(/3 new/)).toBeVisible();        // ...and 3 suggestions from it
+  await expect(page.getByText(/0h ago/)).toHaveCount(0);      // the old lie
+});

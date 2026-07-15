@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { Tweet, GifChip, Counter, X_BLUE, DIM, LINE } from "@/components/ui/tweet";
+import { Tweet, GifChip, Counter, age, X_BLUE, DIM, LINE } from "@/components/ui/tweet";
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -78,7 +78,14 @@ export default function App() {
     setSpend(Number(sp.total) || 0); setCfg(cf.settings || null);
     setAlerts(st.alerts || []); setCredits(st.lastRun?.credits ?? null); setBurn(st.creditsPerDay ?? null); setProvider(st.provider ?? null);
     const r = st.lastRun;
-    setBeat(r?.started_at ? `${Math.round((Date.now() - r.started_at) / 3.6e6)}h ago · ${r.suggested ?? 0}` : "no cycle yet");
+    // Was: `${Math.round(ms / 3.6e6)}h ago · ${suggested}`. Rounding to HOURS meant a cycle
+    // 5 minutes old and one 29 minutes old both read "0h ago", and Math.round made "1h ago"
+    // mean 31 minutes. The bare number was unlabelled: 3 of what? This is the system's
+    // heartbeat — the one line telling you whether it is alive — so it should not need
+    // decoding. age() already does m/h/d properly; reuse it rather than reinvent it badly.
+    setBeat(r?.started_at
+      ? `ran ${age(r.started_at)} ago · ${r.suggested ?? 0} new`
+      : "no cycle yet");
     setCursor(0); setLoading(false);
   }, [status]);
   useEffect(() => { load(); }, [load]);

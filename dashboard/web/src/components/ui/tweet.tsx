@@ -50,7 +50,7 @@ export function TweetText({ text, dim }: { text: string; dim?: boolean }) {
 }
 
 /** age: real value or nothing. A wrong timestamp trains you to ignore the row. */
-function age(ts?: number) {
+export function age(ts?: number) {
   if (!ts) return null;
   const m = Math.max(0, Math.floor((Date.now() - ts) / 60000));
   return m < 60 ? `${m}m` : m < 1440 ? `${Math.floor(m / 60)}h` : `${Math.floor(m / 1440)}d`;
