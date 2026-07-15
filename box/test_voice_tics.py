@@ -81,5 +81,28 @@ def run():
         out = R2.scrub(raw)
         chk(not any(c in out for c in "\u2014\u2013\u2019\u2026"), f"scrub kills {why}")
 
+    # --- the REAL invariant: no draft reaches the user unscrubbed -----------------------
+    # 4 of 6 prompts still contain the em-dash they ban (the judge prompt, style_mine,
+    # session_mine). I am NOT fixing those, and the reason is worth writing down: a prompt's
+    # em-dash can only NUDGE the model, and scrub kills it at the OUTPUT. Traced every path
+    # that produces user-visible text:
+    #   ranker.llm_draft   -> drafts                      scrubbed
+    #   post_gen.draft_post-> drafts/thread/longform      scrubbed
+    #   session_mine -> capture -> post_gen.draft_post    scrubbed (the draft is what ships)
+    #   style_mine   -> chorus:niche -> drafter's PROMPT  its output is scrubbed
+    #   generate.build_judge_prompt -> JSON scores + a "why" that is never published
+    # So prompt prose that never reaches the user is tidying, not a fix. What matters is that
+    # EVERY producer of visible text scrubs — this catches a NEW path that forgets to.
+    import ranker as R3, post_gen as P3
+    producers = [("ranker.llm_draft", R3.llm_draft), ("post_gen.draft_post", P3.draft_post)]
+    for name, fn in producers:
+        src = inspect.getsource(fn)
+        returns_drafts = '"drafts"' in src
+        chk(not returns_drafts or "scrub(" in src,
+            f"{name} returns drafts, so it MUST scrub them")
+    # a producer that returns text but never scrubs is the bug this pins
+    chk(len(producers) == 2,
+        "exactly 2 producers of user-visible drafts (add one, and it must scrub too)")
+
     print(f"VOICE TICS UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())
