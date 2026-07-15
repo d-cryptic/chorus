@@ -76,9 +76,16 @@ def main():
             mx = candidate_source.tweet_metrics(m.group(1))
         except Exception:
             continue
-        _req(f"{base}/api/box/outcome", "POST", tok,
-             {"suggestion_id": p["id"], "likes": mx["likes"], "replies": mx["replies"], "profile_clicks": 0})
-        n += 1
+        try:
+            _req(f"{base}/api/box/outcome", "POST", tok,
+                 {"suggestion_id": p["id"], "likes": mx["likes"], "replies": mx["replies"], "profile_clicks": 0})
+            n += 1
+        except Exception:
+            # tweet_metrics above is guarded; this POST was NOT. One 500 on the first pending
+            # row raised out of main() and skipped the FALLBACK below -- the token-overlap path
+            # that actually fires (posted_url is skipped on 8/8 real posts). A single bad row
+            # must never kill the measurement that feeds rank_tune's reward.
+            continue
     print(f"measured {n} via posted_url")
 
     # FALLBACK — the path that actually fires. posted_url is optional in the UI and was
