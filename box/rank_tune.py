@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Weekly learning loop (M0 — the box twin of convex/rankTune.ts). Aggregates feedback
-(posted vs dismissed, outcome-weighted), nudges ranking weights toward what you accept, POSTs
+(posted vs dismissed, FOLLOWER-weighted), nudges ranking weights toward what actually grows
+the account, POSTs
 /api/box/weights. opportunity-rank/ranker reads them next run. Env: INGEST_URL, INGEST_TOKEN."""
 import os, json, urllib.request
 DEFAULTS = {"pillar": 0.22, "author": 0.18, "upside": 0.16, "fresh": 0.12,
@@ -15,6 +16,7 @@ def _req(url, method="GET", token=None, body=None):
 
 def main():
     base = os.environ.get("INGEST_URL", "http://localhost:8787").rstrip("/"); tok = os.environ.get("INGEST_TOKEN", "")
+    fol_for = follower_attribution(base, tok)
     fb = _req(f"{base}/api/box/feedback?since=0", token=tok).get("feedback", [])
     if len(fb) < 5:
         print(f"only {len(fb)} feedback rows — need >=5 to tune"); return
@@ -25,7 +27,15 @@ def main():
         if not fac: continue
         positive = (f.get("action", "") or "").startswith("posted")
         if positive:
-            w = 1.0 + ((f.get("likes") or 0) + 2 * (f.get("replies") or 0)) / 10  # outcome-weighted
+            # REWARD = FOLLOWERS GAINED, not likes. The goal is followers; likes are a
+            # proxy that diverges badly — a viral joke earns 500 likes and 0 follows, a
+            # sharp technical take earns 20 likes and 5 follows. Tuning on likes taught
+            # the ranker to chase the wrong thing.
+            gained = fol_for(f.get("ts"))
+            if gained is not None:
+                w = 1.0 + gained * 3.0          # followers dominate when we have the data
+            else:                                # no snapshot covers this reply yet
+                w = 1.0 + ((f.get("likes") or 0) + 2 * (f.get("replies") or 0)) / 10
             nP += w
             for k, v in fac.items(): pos[k] = pos.get(k, 0) + float(v) * w
         else:

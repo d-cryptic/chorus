@@ -399,3 +399,35 @@ capped at 2 pages.)
 Honest: with one account and no control group this is **correlational, not causal** — a
 spike after replying to a 500k account is evidence, not proof. Still far better than
 optimising likes.
+
+## The reward function (rank_tune) — followers, not likes
+
+`rank_tune` used to reward `action.startswith("posted")` weighted by
+`(likes + 2*replies)/10`. **It was optimising likes.** Likes are a proxy that diverges from
+the goal: a viral joke earns 500 likes and 0 follows; a sharp technical take earns 20 likes
+and 5 follows. The ranker was being taught to chase the wrong number.
+
+Reward is now **followers gained**, via `follower_attribution()`: `follower_track` snapshots
+hourly, and each posted reply is credited an equal share of the delta over the window it
+landed in. Likes remain only as a fallback when no snapshot covers a reply yet.
+
+**Honest about attribution:** one account, no control group, and several replies can share a
+window — so this is *correlational, not causal*, and noisy at low volume. It is still
+strictly better than optimising likes, and it self-corrects as volume grows: noise averages
+out, a real signal does not.
+
+## The timezone ceiling (the finding that outranks the code)
+
+Sampled 40 recent anchor originals by IST hour: **40% land 01:00–07:59, and the peak
+(03:00–05:00 IST = US afternoon = peak X) is when you are asleep.** The anchor set is
+US-clocked; you are IST. A ~25min reply window is physically unreachable there — **no code
+fixes this.** `fast_lane` now skips most of those polls (saving ~3,800 cr/day of provably
+dead spend), and `discover_anchors.py` hunts high-reach on-pillar accounts whose clock
+overlaps your waking hours.
+
+Calibration note, because the first version was wrong: with only a follower FLOOR it
+proposed @jack (9.9M), @satyanadella (7.1M), @aplusk (14M) — useless, because 500+ replies
+land within minutes, earliness → 0, and you are reply #2000. **Reach you cannot get early
+on is worthless.** It now applies a follower CEILING (800k), a median-replies test (≤80 —
+the honest "can I be early?" check) and an on-pillar test. It runs `--dry-run` weekly: it
+proposes, a human decides.
