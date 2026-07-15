@@ -53,10 +53,10 @@ def run(args):
         hit = (handle and handle in ans) or (name and len(name) > 3 and name in ans)
         if hit:
             cited += 1
-            print(f"  ✓ cited on '{pillar}'")
+            print(f"  ✓ cited on '{pillar}'", flush=True)
         else:
             gaps.append(pillar)
-            print(f"  ✗ invisible on '{pillar}'")
+            print(f"  ✗ invisible on '{pillar}'", flush=True)
 
     checked = cited + len(gaps)
     if not checked:

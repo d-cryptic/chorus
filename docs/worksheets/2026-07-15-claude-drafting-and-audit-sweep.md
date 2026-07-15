@@ -81,3 +81,32 @@ until a fuller mine.
 - Piecemeal base64 deploys SILENTLY DESYNC the box: this shift left 6 files stale (tests +
   hermes_backend), so the box ran different code than committed. End-of-shift validation
   caught it. ALWAYS finish with `md5sum *.py` box-vs-laptop + a full on-box suite run.
+
+
+## 2026-07-16 continuation -- content modes, RAG, budget, GEO
+
+Massive feature build after Claude/grok/codex drafting landed.
+
+- **15 content modes** (3 batches x 5 parallel subagents): short, sarcastic, research, longform,
+  thread, contrarian, story, question, quote, listicle, humor, announcement, prediction,
+  explainer, analogy. Each = a craft brief + model_pref, in box/content_modes.py. grok for the
+  punchy/X-native modes, codex for the structured/faithful ones (cli:codex), env-overridable.
+  codex->grok fallback so a slow codex never loses a cron draft.
+- **Mode auto-selection**: classify_mode() (grok, $0) picks the mode per idea from the shape's
+  candidates. Verified: news->announcement, mockable->sarcastic, relatable->humor. CHORUS_AUTO_MODE=0
+  disables; CHORUS_FORCE_MODE overrides.
+- **Full draft context** (the "are they getting memory/research/analytics" audit): every draft now
+  carries memory (voice/niche/posts from Supermemory) + <link> real-time grounding (link_context,
+  was MISSING for original posts) + <research> gated web search + <what_works> own-outcome insights.
+- **Semantic RAG**: the store was already semantic (real Supermemory embeddings); the QUERY was by
+  pillar names. Now voice_context is queried by the IDEA/tweet content -> per-idea nearest-neighbour
+  over your own posts. Both post_gen (originals) and ranker (per-reply).
+- **Budget phantom-cost fix**: subscription LLM ops are $0 (real cost is the flat sub fee), so they
+  no longer eat the read ceiling. This was why "the dashboard stopped loading new tweets". Ceiling is
+  now managed in the dashboard (spend/ceiling stat + inline editor), not a D1 hack.
+- **Giphy**: activated + rate-limited to 100/hr (sliding window), rendered in the UI with attribution.
+- **GEO agent** (box/geo.py, weekly): asks grok who the niche voices are, checks if you are cited,
+  scores visibility, names the gaps -> geo_visibility insight.
+
+Suite: box 517 + geo 6, laptop parity. codex-via-Hermes is blocked on a separate `hermes auth add
+openai-codex` (interactive) -- cli:codex kept, env-swappable via CHORUS_CODEX_PROVIDER.
