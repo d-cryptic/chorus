@@ -1,7 +1,8 @@
 # 2026-07-15 — Claude drafting via subscription + a full audit sweep
 
-**Status:** 19 commits + 2 box-only fixes, deployed. FULL VALIDATION green: box 408, laptop 531,
-e2e 23, ZERO box/laptop drift. Claude drafting BUILT; ONE user step remains (OAuth). 1,095 followers.
+**Status:** 21 commits + box fixes, deployed, validated (box 408/laptop 531/e2e 23, zero drift).
+Claude OAuth DONE; blocked on subscription being OUT OF USAGE. Guarded activate script ready.
+deepseek active meanwhile. 1,095 followers.
 
 ## Goal
 
@@ -29,15 +30,25 @@ A subagent even fabricated "all four agents reported" and retracted it. Measure,
 - Bake-off (full Supermemory context): Claude Sonnet 4.6 clean + sharper than deepseek;
   gpt-5 failed JSON 2/3. See [[drafter-model-choice]] memory.
 
-## NEXT STEP (blocked on the human — interactive OAuth)
+## Claude drafting — DONE except the subscription is out of usage
 
-A `hermes auth add anthropic` flow is LIVE in a detached tmux session on the box (`tmux
-has-session -t hauth`), holding the PKCE verifier, waiting for the authorization code.
-1. Open the claude.ai/oauth/authorize URL (captured via `tmux capture-pane -t hauth -p`).
-2. Approve -> copy the code.
-3. Feed it: `tmux send-keys -t hauth "<code>" Enter`.
-4. Then: `CHORUS_DRAFT_PROVIDER=hermes:anthropic:claude-sonnet-4.6` in box/.env.
-Gate: box drafts with Claude 24/7 on the subscription. (If the session died: restart it.)
+The OAuth completed: `hermes auth add anthropic` succeeded and the FIRST draft test reached the
+Claude API -> it returned "You're out of extra usage. Add more at claude.ai/settings/usage."
+That is the wall: the Claude subscription has NO usage left, so drafting cannot run yet.
+
+Two user-side steps remain, in order:
+1. Restore Claude usage (wait for the reset, or add usage at claude.ai/settings/usage).
+2. Re-auth if needed (my premature pkill of the auth process left the credential unreadable:
+   `hermes -z --provider anthropic` now reports "No Anthropic credentials found"). Clean re-auth:
+     tmux new-session -d -s hauth "hermes auth add anthropic --no-browser"
+     tmux capture-pane -t hauth -p -J | grep -oE "https://claude.ai/oauth/authorize\S+"   # open, approve
+     tmux send-keys -t hauth "<code>" Enter        # then DO NOT kill the session -- let it finish
+3. Activate SAFELY: `/opt/chorus/box/run.sh bash activate_claude.sh`. It tests a real Claude
+   draft and ONLY sets CHORUS_DRAFT_PROVIDER=hermes:anthropic:claude-sonnet-4.6 if it succeeds
+   -- so it never enables a broken provider. Installed and verified to DECLINE while unavailable.
+
+Until then the drafter stays on deepseek/OpenRouter (working). The cli:claude / cli:grok
+backends also remain available where a CLI is logged in.
 
 ## Bugs fixed this shift (all deployed)
 
