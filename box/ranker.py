@@ -415,7 +415,11 @@ def niche_context():
         chunks = []
         # contrast last but included: it is the only one that says what YOU do differently
         # from what lands. Stored by style_mine and, until now, never read by anything.
-        for tag in ("chorus:niche:replies", "chorus:niche", "chorus:niche:contrast"):
+        # taste FIRST: chorus:self:taste is what THIS person actually posts, learned from
+        # their own accept/ignore. The niche tags describe what works for OTHER people, and
+        # when the two disagree the user's own revealed preference wins.
+        for tag in ("chorus:self:taste", "chorus:niche:replies", "chorus:niche",
+                    "chorus:niche:contrast"):
             out = _req(f"{base}/v3/search", "POST", key or None,
                        {"q": _sm_q(""), "containerTags": [tag]}, timeout=8)
             r = _sm_texts(out, 600)

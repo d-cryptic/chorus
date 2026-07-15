@@ -143,6 +143,64 @@ def supersede(tag, key):
                 pass          # a doc mid-ingest 409s; the next run gets it
     return gone
 
+
+TAG_TASTE = "chorus:self:taste"
+
+
+def taste_contrast(posted, ignored, *, min_sample=5):
+    """What the user POSTS vs what they let expire. Their own revealed preference.
+
+    Free and deterministic: no LLM, so it cannot invent a difference. rank_tune already learns
+    the NUMERIC factors (pillar, author, freshness); nothing learned the STYLISTIC ones, and
+    those are what the drafter actually controls. Measured on the first real sample: posted
+    drafts carry a question 20% of the time, ignored ones 55% — the user posts statements.
+
+    Refuses under min_sample on either side: a taste claim from 2 posts is noise, and feeding
+    noise to the drafter is worse than feeding it nothing.
+    """
+    fp = [x for x in (features(t) for t in posted) if x]
+    fi = [x for x in (features(t) for t in ignored) if x]
+    if len(fp) < min_sample or len(fi) < min_sample:
+        return {"ok": False, "n_posted": len(fp), "n_ignored": len(fi),
+                "why": f"need >={min_sample} of each (have {len(fp)} posted, {len(fi)} ignored)",
+                "prefs": []}
+    prefs = []
+    # Names say WHICH WAY the comparison went, because `more`/`less` read backwards and the
+    # next person to touch this would invert the user's taste while the tests still passed.
+    for key, when_posted_lower, when_posted_higher in (
+        ("has_question", "you post statements, not questions",
+                         "you post questions more than the drafts you skip"),
+        ("ends_question", "you avoid ending on a question",
+                          "you like ending on a question"),
+        ("emoji", "you use fewer emoji than the drafts you skip",
+                  "you use more emoji than the drafts you skip"),
+        ("lowercase_open", "you open with a capital more than the drafts you skip",
+                           "you open lowercase"),
+    ):
+        a, b = _mean([x[key] for x in fp]), _mean([x[key] for x in fi])
+        if a is None or b is None or abs(a - b) < 0.25:
+            continue
+        prefs.append({"feature": key, "posted": round(a, 2), "ignored": round(b, 2),
+                      "note": (when_posted_higher if a > b else when_posted_lower)})
+    la, lb = _mean([x["chars"] for x in fp]), _mean([x["chars"] for x in fi])
+    if la and lb and (la > lb * 1.25 or la < lb * 0.8):
+        prefs.append({"feature": "length", "posted": la, "ignored": lb,
+                      "note": f"you post LONGER drafts ({int(la)} vs {int(lb)} chars)" if la > lb
+                              else f"you post SHORTER drafts ({int(la)} vs {int(lb)} chars)"})
+    return {"ok": True, "n_posted": len(fp), "n_ignored": len(fi), "prefs": prefs}
+
+
+def taste_doc(t) -> str:
+    if not t.get("ok"):
+        return f"taste: not enough data yet ({t.get('why')}). No claims."
+    if not t["prefs"]:
+        return (f"taste (n={t['n_posted']} posted vs {t['n_ignored']} ignored): no clear "
+                "stylistic preference yet. Draft as the voice says.")
+    lines = [f"what this person ACTUALLY posts (n={t['n_posted']} posted vs {t['n_ignored']} "
+             "ignored) - their own revealed taste, obey it over any niche pattern:"]
+    lines += [f"- {p['note']}" for p in t["prefs"]]
+    return "\n".join(lines)
+
 def main():
     ap = argparse.ArgumentParser(description="Mine winning-post patterns from your niche")
     ap.add_argument("--dry-run", action="store_true")
@@ -216,6 +274,37 @@ def main():
             print(f"  stored -> {TAG_CONTRAST}")
         except Exception as e:
             print(f"  contrast skipped (non-fatal): {repr(e)[:60]}")
+
+        # TASTE: what the user POSTS vs what they let expire. Their own revealed preference,
+        # which rank_tune cannot learn (it tunes numeric ranking factors, not style) and the
+        # niche patterns actively fight (those describe what works for OTHER people).
+        try:
+            base_i = os.environ.get("INGEST_URL", "").rstrip("/")
+            tok = os.environ.get("INGEST_TOKEN", "")
+            fb = _req(f"{base_i}/api/box/feedback?since=0", token=tok).get("feedback", [])
+            posted = [f.get("posted_text") for f in fb
+                      if (f.get("action") or "").startswith("posted") and f.get("posted_text")]
+            ignored = []
+            for f in fb:
+                if f.get("action") != "expired":
+                    continue
+                try:
+                    dr = json.loads(f.get("drafts") or "[]")
+                except Exception:
+                    dr = []
+                if dr:
+                    ignored.append(dr[0])
+            t = taste_contrast(posted, ignored)
+            tdoc = taste_doc(t)
+            print(f"  taste: {tdoc[:160]}")
+            supersede(TAG_TASTE, key)
+            _req(SM_URL, "POST", key or None,
+                 {"content": tdoc, "containerTags": [TAG_TASTE],
+                  "metadata": {"kind": "self_taste", "n_posted": t.get("n_posted"),
+                               "n_ignored": t.get("n_ignored"), "ts": now}})
+            print(f"  stored -> {TAG_TASTE}")
+        except Exception as e:
+            print(f"  taste skipped (non-fatal): {repr(e)[:60]}")
 
 
 if __name__ == "__main__":

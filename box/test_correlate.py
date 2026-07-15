@@ -4,7 +4,7 @@
 2. cross-source   — same story on HN+GitHub+timeline -> ONE stronger idea (post_gen.py)
 3. me-vs-them     — where your structure diverges from what lands (style_mine.py)
 """
-import insights as I, post_gen as P, style_mine as S
+import insights as I, post_gen as P, style_mine as S, ranker as R
 
 
 def run():
@@ -72,6 +72,33 @@ def run():
     chk("not enough data" in S.contrast(["a"], theirs) and True or True, "doc is honest when thin")
     chk(S.features("") is None, "empty text -> None")
     chk(S.features("hi?")["ends_question"] is True, "detects trailing question")
+
+    # --- taste: what the user POSTS vs what they IGNORE (their own revealed preference) ---
+    # rank_tune learns the NUMERIC factors (pillar, author, freshness). Nothing learned the
+    # STYLISTIC ones, which are exactly what the drafter controls. Measured on the first real
+    # sample: posted drafts carry a question 20% of the time, ignored ones 55% — the user
+    # posts statements. The niche patterns actively fight this: they describe what works for
+    # OTHER people, so taste is read FIRST and outranks them.
+    t = S.taste_contrast(["a dry statement."] * 6, ["really? what do you think?"] * 6)
+    chk(t["ok"], "taste runs with enough of both")
+    notes = [x["note"] for x in t["prefs"]]
+    chk(any("statements, not questions" in n for n in notes), "spots statements-over-questions")
+    # direction matters: `more`/`less` read backwards and would invert the user's taste while
+    # the tests still passed. Assert BOTH directions.
+    t2 = S.taste_contrast(["really? what do you think?"] * 6, ["a dry statement."] * 6)
+    chk(any("you post questions more" in x["note"] for x in t2["prefs"]),
+        "inverted input inverts the claim (the mapping is direction-correct)")
+    chk(S.taste_contrast(["a"] * 2, ["b?"] * 6)["ok"] is False, "refuses below min_sample on either side")
+    chk(S.taste_contrast([], [])["ok"] is False, "empty is safe")
+    chk("not enough data" in S.taste_doc(S.taste_contrast(["a"], ["b?"])), "doc is honest when thin")
+    chk(S.taste_contrast(["a dry statement."] * 6, ["a dry statement."] * 6)["prefs"] == [],
+        "identical corpora invent no preference")
+    # the drafter must READ it, and taste must come BEFORE the niche tags
+    import inspect
+    nsrc = inspect.getsource(R.niche_context)
+    chk("chorus:self:taste" in nsrc, "drafter reads the taste doc (stored-but-unread = inert)")
+    chk(nsrc.index("chorus:self:taste") < nsrc.index("chorus:niche"),
+        "taste is read BEFORE niche: the user's own taste outranks other people's patterns")
 
     print(f"CORRELATE UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())
