@@ -26,6 +26,11 @@ MUTANTS = [
     ("session_mine.py", 'new1_|AIza)[A-Za-z0-9_\\-]{8,}', 'ZZZZ_NEVER_MATCHES)',
      "REDACTION: L1 key regex neutered"),
     ("session_mine.py", "def leaks(", "def _dead_leaks(", "REDACTION: L3 leak check removed"),
+    # scrub was wired into post_gen alone, so 25% of replies and 39% of quotes shipped a
+    # machine tell while the prompt "banned" them.
+    ("ranker.py", '"drafts": [scrub(x) for x in d.get("drafts", []) if x][:3],',
+     '"drafts": [x for x in d.get("drafts", []) if x][:3],',
+     "VOICE: reply/quote drafts stop being scrubbed"),
     # The worker had ZERO tests. I nearly shipped 20 columns against 19 values there today —
     # every ingest would have 500'd, and I caught it by counting on my fingers.
     ("../dashboard/src/index.ts", "gif, thread, longform, media, status",

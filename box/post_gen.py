@@ -27,7 +27,7 @@ Variants (PRD-11): 2 while cold-start, 1 once there is traction.
 from __future__ import annotations
 import os, re, sys, json, time, argparse, urllib.parse
 import budget as B
-from ranker import _req, _alert, get_voice, voice_context, niche_context, flush_spend, run_log, ingest, content_id
+from ranker import _req, _alert, get_voice, voice_context, niche_context, flush_spend, run_log, ingest, content_id, scrub
 
 # Measured acceptance by route (n=21 decisions): post 3/3 = 100%, quote 4/6 = 67%,
 # reply 3/12 = 25%. The queue was inverted against that — 17 replies to 6 posts — because
@@ -229,23 +229,6 @@ def build_prompt(idea, voice, examples, niche, pillars, *, shape="post"):
     )
 
 
-
-
-def scrub(text):
-    """Strip the machine tells the prompt asks for but the model does not reliably obey.
-
-    The em-dash ban is stated in the rules and the model STILL emitted "isn't about quality
-    control—it's a sneaky way". Prompt adherence is a request; this is a guarantee. Deterministic
-    beats polite every time.
-    """
-    if not text:
-        return text
-    t = text.replace("\u2014", ", ").replace("\u2013", ", ")   # em/en dash -> comma
-    t = t.replace("\u2019", "'").replace("\u201c", '"').replace("\u201d", '"')  # smart quotes
-    t = t.replace("\u2026", "...")
-    while ", ," in t:
-        t = t.replace(", ,", ",")
-    return t.replace(" ,", ",").strip()
 
 
 _STOP = {"the","a","an","of","to","and","or","in","on","for","with","is","are","was","were",

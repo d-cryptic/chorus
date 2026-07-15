@@ -62,5 +62,24 @@ def run():
     chk("Do not open with 'ngl'" not in psrc, "post_gen does not ban ngl either")
     chk("never stacked" in psrc, "post_gen still bans stacking")
 
+    # --- the scrub guarantee covered 18 drafts and missed 156 ---------------------------
+    # I banned em-dashes in the prompt, then said "prompt adherence is a request; scrub is a
+    # guarantee" — and wired scrub into post_gen ONLY. Measured across every draft ever
+    # generated: 25% of REPLIES and 39% of QUOTES carry a machine tell (em/en dash, smart
+    # quote, ellipsis), including one the user POSTED ("the skill set here is clutch-inference").
+    # Replies and quotes are made by ranker.llm_draft, which never scrubbed.
+    import ranker as R2, post_gen as P2
+    chk(R2.scrub is P2.scrub, "ONE scrub, shared — two copies drift apart silently")
+    chk("scrub(x)" in inspect.getsource(R2.llm_draft),
+        "ranker.llm_draft scrubs its drafts (replies + quotes: 156 of 174 drafts)")
+    chk("scrub(x)" in inspect.getsource(P2.draft_post), "post_gen still scrubs its own")
+    # and the scrub must actually kill the tells that were measured in real drafts
+    for raw, why in (("clutch\u2014inference", "the em-dash the user actually posted"),
+                     ("a\u2013b", "en-dash"),
+                     ("it\u2019s", "smart apostrophe"),
+                     ("wait\u2026", "ellipsis")):
+        out = R2.scrub(raw)
+        chk(not any(c in out for c in "\u2014\u2013\u2019\u2026"), f"scrub kills {why}")
+
     print(f"VOICE TICS UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())

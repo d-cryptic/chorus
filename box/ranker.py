@@ -138,6 +138,28 @@ def flush_spend(base, token, tracker, *, source="cycle"):
               f"local ceiling still binds this cycle, but the ledger is now behind")
         return False
 
+def scrub(text):
+    """Strip the machine tells the prompt asks for but the model does not reliably obey.
+
+    The em-dash ban is stated in the rules and the model STILL emitted "isn't about quality
+    control—it's a sneaky way". Prompt adherence is a request; this is a guarantee. Deterministic
+    beats polite every time.
+    """
+    if not text:
+        return text
+    t = text.replace("\u2014", ", ").replace("\u2013", ", ")   # em/en dash -> comma
+    t = t.replace("\u2019", "'").replace("\u201c", '"').replace("\u201d", '"')  # smart quotes
+    t = t.replace("\u2026", "...")
+    while ", ," in t:
+        t = t.replace(", ,", ",")
+    return t.replace(" ,", ",").strip()
+
+
+_STOP = {"the","a","an","of","to","and","or","in","on","for","with","is","are","was","were",
+         "how","why","what","its","it","that","this","from","by","at","as","be","new","show",
+         "hn","github","com","www","https","http","using","use","your","you","we","our"}
+
+
 def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche="", room=(), link=""):
     """One LLM call -> {angle, drafts[], angle_strength}. Deterministic fallback when no key."""
     if not api_key:
@@ -224,7 +246,13 @@ def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche="", room=(
             txt = txt.strip("`").split("\n", 1)[-1].rsplit("```", 1)[0]
         d = json.loads(txt)
         return {"angle": d.get("angle", ""), "angle_strength": float(d.get("angle_strength", 0.5)),
-                "drafts": [x for x in d.get("drafts", []) if x][:3],
+                # SCRUB HERE, not only in post_gen. The em-dash ban is stated in the prompt
+                # and the model ignores it. Measured across every draft ever generated: 25% of
+                # REPLIES and 39% of QUOTES carry a machine tell (em/en dash, smart quote,
+                # ellipsis) - including one the user posted ("the skill set here is
+                # clutch-inference"). scrub() existed but was wired into post_gen alone, so
+                # the guarantee I claimed covered 18 drafts and missed 156.
+                "drafts": [scrub(x) for x in d.get("drafts", []) if x][:3],
                 "gif": (d.get("gif") or None),
                 "thread": [x for x in (d.get("thread") or []) if x][:5]}
     except Exception:
