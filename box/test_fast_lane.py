@@ -59,5 +59,19 @@ def run():
     chk(bool(m), "since_ts subtracts the full MAX_AGE_MIN window plus overlap")
     chk("seen" in src, "`seen` still dedupes anything the overlap double-counts")
 
+    # --- the quiet window must match the user's REAL clock, not an assumption -----------
+    # It was 01:00-07:59, from a guess about when they sleep. Their posted-feedback clock says
+    # they posted at 01:36 and 01:48 IST (= 20:00 UTC, US evening, when the US anchors are
+    # live). fast_lane was throttling to 1-in-3 while they sat there posting. Their actual
+    # dead zone is 02:00-08:00: zero posts, ever.
+    chk("CHORUS_QUIET_START" in src, "the window is configurable, not hardcoded (n=10 is thin)")
+    q_start, q_end = 2, 8
+    posts_by_hour = {1: 2, 9: 3, 10: 3, 13: 1, 14: 1}   # measured from real feedback
+    throttled_while_active = [h for h, n in posts_by_hour.items() if n and q_start <= h < q_end]
+    chk(not throttled_while_active,
+        f"no hour the user actually posts is throttled (would be {throttled_while_active})")
+    chk(q_start <= 3 < q_end, "03:00 — a genuine dead hour — stays throttled")
+    chk(not (q_start <= 1 < q_end), "01:00 is NOT throttled: they demonstrably post then")
+
     print(f"FAST LANE UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())

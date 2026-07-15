@@ -17,7 +17,13 @@ in the user's awake window, and propose the winners for targets_b.
 from __future__ import annotations
 import os, json, time, argparse, collections
 
-AWAKE = range(9, 24)   # 09:00-23:59 local — when a 25min window is actually actionable
+# When a 25min reply window is actually actionable, in the USER's clock. Measured from their
+# posted-feedback, not assumed: 09:00, 10:00, 13:00, 14:00 IST — and a real 01:00 session
+# (01:36 and 01:48, replying to @TheAhmadOsman and @DhravyaShah). 01:00 IST is 19:30 UTC, US
+# afternoon, so their late session overlaps US anchors. I had previously written that window
+# off as "asleep" and scored US anchors down for it, which was an assumption, not a finding.
+# Their real dead zone is 02:00-08:00: zero posts, ever.
+AWAKE = frozenset([1] + list(range(9, 24)))
 
 
 def clock_overlap(tweets, tz_offset_h=None):
@@ -39,6 +45,26 @@ def clock_overlap(tweets, tz_offset_h=None):
 PILLAR_RE = None
 
 
+
+def rejected():
+    """Handles a human already looked at and said no to.
+
+    Without this the tool re-proposes them EVERY run and the same judgement gets re-litigated
+    from scratch: @refikanadol (an AI *artist* — passes pillar keywords, fails pillar intent)
+    has now been proposed three times across three sessions. The rejects live in
+    box/rejected_anchors.txt (box-only, like targets.json) because the reasoning is about
+    specific real people and does not belong in a public repo.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    p = os.path.join(here, "rejected_anchors.txt")
+    out = set()
+    if os.path.exists(p):
+        for line in open(p):
+            h = line.split("#")[0].strip().lstrip("@").lower()
+            if h:
+                out.add(h)
+    return out
+
 def graph_candidates(d, min_f, max_f):
     """Seed from the user's OWN graph. Free: followings.json/followers.json are already local.
 
@@ -50,6 +76,7 @@ def graph_candidates(d, min_f, max_f):
     pillar = re.compile(r"\b(ai|ml|llm|agent|infra|devops|kubernetes|cloud|backend|distributed|"
                         r"database|platform|engineer|open.?source|systems|rust|golang|python)", re.I)
     anchors = {h.lower() for h in (d.get("targets_a") or []) + (d.get("targets_b") or [])}
+    anchors |= rejected()          # a human already said no; do not ask again
     out, seen = [], set()
     for fn in ("followings.json", "followers.json"):
         p = os.path.join(here, fn)
@@ -117,7 +144,8 @@ def main():
                     h = tok[1:].strip(".,:!?").lower()
                     if h not in known and h.isalnum():
                         pool[h] += 1
-    cands = [h for h, n in pool.most_common(40) if n >= 2]
+    _rej = rejected()
+    cands = [h for h, n in pool.most_common(40) if n >= 2 and h not in _rej]
     print(f"  {len(cands)} candidate accounts your anchors engage with")
 
     if args.from_graph:

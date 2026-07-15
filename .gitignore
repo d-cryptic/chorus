@@ -42,3 +42,5 @@ dashboard/web/e2e/*.png
 dashboard/web/test-results/
 dashboard/web/playwright-report/
 box/captures.txt
+# judgements about specific real people — box-only, like targets.json
+box/rejected_anchors.txt

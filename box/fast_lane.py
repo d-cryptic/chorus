@@ -88,8 +88,17 @@ def main():
     # polled while they slept. Exactly inverted. CHORUS_TZ_OFFSET_H is the user's UTC offset.
     tz_off = float(os.environ.get("CHORUS_TZ_OFFSET_H", "5.5"))   # IST
     hr = time.gmtime(time.time() + tz_off * 3600).tm_hour
-    if not args.dry_run and 1 <= hr <= 7 and (int(time.time()) // 600) % 3 != 0:
-        print(f"quiet window ({hr:02d}:00 your time) — skipping poll (you cannot reply in time)")
+    # The window came from an ASSUMPTION about when the user sleeps. Their posted-feedback
+    # clock says otherwise: they posted at 01:36 and 01:48 IST (replying to @TheAhmadOsman
+    # and @DhravyaShah), which is 20:00 UTC — US evening, when the US anchors are live. They
+    # are a night owl, and 01:00 was throttled to a third of the rate while they were sat
+    # there posting. Their real dead zone is 02:00-08:00: zero posts, ever.
+    # Deliberately a default, not a hardcode: CHORUS_QUIET_START/END. n=10 is thin, so this
+    # must be trivially adjustable when the pattern sharpens.
+    q_start = int(os.environ.get("CHORUS_QUIET_START", "2"))
+    q_end = int(os.environ.get("CHORUS_QUIET_END", "8"))
+    if not args.dry_run and q_start <= hr < q_end and (int(time.time()) // 600) % 3 != 0:
+        print(f"quiet window ({hr:02d}:00 your time) — throttled to 1-in-3 (you are usually asleep)")
         return
 
     if args.dry_run:

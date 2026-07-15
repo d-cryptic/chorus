@@ -65,3 +65,38 @@ kmeanskaran, neural_avb, santoshyadavdev. `targets_b`: 25 -> 37.
     # then read every bio + recent posts before adding. The tool cannot see intent.
 
 `targets.json` is git-ignored (box-only), so the reasoning and the rejects live here.
+
+## Update 2026-07-15 (later): the AWAKE window was an assumption too
+
+`AWAKE = range(9, 24)` was a guess about when the user is up. Their posted-feedback clock
+says otherwise:
+
+| IST hour | posts |
+|---|---|
+| **01:00** | **2** (01:36 @TheAhmadOsman, 01:48 @DhravyaShah) |
+| 09:00 | 3 |
+| 10:00 | 3 |
+| 13:00 | 1 |
+| 14:00 | 1 |
+
+**01:00 IST is 19:30 UTC — US afternoon.** They have a real second session that overlaps the
+US anchors, and I had written that whole window off as "asleep" and scored US anchors down
+for it. `fast_lane` was also throttling to 1-in-3 at 01:00 *while they sat there posting*.
+Their actual dead zone is **02:00-08:00**: zero posts, ever.
+
+`AWAKE` now includes 01:00; the fast_lane window is `CHORUS_QUIET_START/END` (2-8) rather
+than hardcoded, because n=10 is thin and this must stay easy to adjust.
+
+Effect: reachable candidates went **12 -> 18**, and the run surfaced people the old window
+hid — @jonhoo (36k, **90% overlap, ~2 replies/post** — the best ratio found: high reach,
+almost no competition), @iavins (13k, **100% overlap**, breaks databases at Turso),
+@dok2001 (**CTO of Cloudflare** — the user's entire stack), @charliermarsh (Ruff/uv, OpenAI).
+
+## The tool now REMEMBERS rejections
+
+It re-proposed @refikanadol three times across three sessions because the rejects lived in
+this doc and nothing read it. `box/rejected_anchors.txt` (box-only, git-ignored — the
+reasoning is about specific real people) is now read by `discover_anchors`, so a human
+judgement sticks. 15 handles recorded, with the reason on each line.
+
+`targets_b`: 37 -> 51.
