@@ -58,3 +58,86 @@ Projected tomorrow: **$0.19/day, 3.4x headroom.**
    single-beat). They need richer input: captures, session-mined material.
 4. Follower attribution is n=2. Nowhere near enough to tune routes. Replies are 25% accepted
    but they are the growth mechanism; do not amputate them on a coin flip.
+
+---
+
+## Part 2 (later the same day): the reward signal was dead three ways over
+
+Everything above was found by reading the user's DATA. This half was found by not believing
+the logs.
+
+**Every bug that actually hurt today REPORTED SUCCESS.** None threw. That is the through-line:
+
+| what it printed | what was true |
+|---|---|
+| queue merely looked idle | `fast_lane` crashed on EVERY run, 144x/day |
+| `matched+measured 4` | every outcome row was an ORPHAN keyed to a feedback id; `verified` was always 0 |
+| `spent $0.003 of $10.0` | a fake ceiling: dry-runs made REAL paid calls the breaker never saw |
+| `10 posted` | 4. `posted` means the user CLICKED; the intent URL only opens X's composer |
+| voice/niche/repeat "nothing to say" | three `except: pass` sites swallowing real failures |
+
+### The outcome chain (three independent bugs, each hiding the next)
+1. `outcome_track` discovered **replies only** -> 7 of 10 posts structurally invisible
+2. it keyed writes on **`f.id`** (the FEEDBACK autoincrement) because `/api/box/feedback`
+   never returned `s.id` -> every row an orphan, joining to nothing
+3. `posted` meant **clicked, not published** -> 6 of 10 never reached X
+
+Any ONE would have emptied the reward signal. All three printed success. Fixed; 4 outcomes
+now attach, and the insights engine immediately produced real claims from data it already
+had — including `best_time: 01:00`, which independently confirms the 01:00 session found in
+the feedback clock, from a different code path.
+
+### What I retracted
+I shipped "you post statements, not questions" from claimed-posted data. Re-derived from
+VERIFIED posts the MIN_SAMPLE guard correctly refuses: *4 posted, need 5. No claims.* The
+guard was right all along; I fed it a lie. Live doc retracted (202 chars -> 0).
+
+### Testing: the suite could not fail
+Mutation audit (`box/mutation_audit.py`, committed and repeatable) found **MIN_SAMPLE pinned
+by NOBODY** — all 53 insights tests passed `min_sample=` explicitly, so the DEFAULT was
+untested. Someone could set it to 1 and stay green while the engine invented claims from n=1.
+Also: `already_said`'s production branch never entered; the founding invariant (**Chorus never
+posts**) had NO test at all; `session_mine` (private sessions -> public tweets) had ZERO tests
+while its own threat model says the output is a public tweet.
+
+Now 14/14 mutants caught, including both suggest-only attacks and both redaction layers.
+
+**Four decorative tests found**, two by hand and two by mutation. The only way to know a test
+works is to break it on purpose:
+- the provider-leak test: playwright's `webServer` runs `npm run build` on start and silently
+  rebuilt over the injected leak, so it "passed"
+- the X-blue test: scanned only the queue tab, where the offending bars do not exist
+- MIN_SAMPLE and the repeat guard: defaults never asserted
+
+## The trap that bit me FOUR times
+
+A rule gets caught by its own text:
+- the em-dash ban rule has to contain an em-dash
+- the provider-leak test has to name the provider
+- `mutation_audit.py` contains an `api.x.com` POST as an injectable mutant, so the invariant
+  scanner flagged the detector itself
+- the `or f.get("id")` assertion matched my own COMMENT explaining what not to do
+
+Any tool that must DESCRIBE a violation to hunt it will trip a naive detector. Scan production
+only; check the code line, not the prose.
+
+## And the one I reproduced inside its own fix
+
+`str.replace` with guessed indentation is a SILENT NO-OP. While fixing the silent-failure
+class, three of my replaces did nothing and reported nothing, leaving `failed`/`stuck`
+declared and read with nothing appending — warnings that could never fire, worse than the
+silence they replaced. Caught by a dead-code check (appends vs reads). **Assert every
+replace, or patch by line number.**
+
+## Next session
+
+1. `useful_account`: @TheAhmadOsman 3/4 posted, @tom_doerr 0/6 — n=4, below MIN_SAMPLE. The
+   guard is RIGHT. Do not override it.
+2. Follower attribution is n=2. Replies are 25% accepted but they are the growth mechanism.
+   Do not amputate the lane on a coin flip.
+3. Threads/longform have never fired on real HN input — correctly: headlines are single-beat.
+   They need richer input (captures, session-mined).
+4. Watch `"the real test is whether..."` (2 of ~180 drafts). Same shape as the tic that hit 14.
+5. **Open question, not a code bug:** a 40% click-to-publish rate. Either the user reconsiders
+   at X's composer (legitimate, and worth capturing as its own signal) or the intent flow
+   loses drafts. Do not assume which.
