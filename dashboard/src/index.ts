@@ -300,6 +300,28 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
         .bind(b.id, b.action, b.final_text ?? null, b.reason ?? null, now).run();
       return json({ ok: true, status: st });
     }
+    if (req.method === "POST" && p === "/api/box/followers") {
+      if (typeof b?.count !== "number") return json({ error: "count required" }, 400);
+      await env.DB.prepare("INSERT OR REPLACE INTO follower_snapshot (ts, count) VALUES (?,?)")
+        .bind(b.ts ?? now, b.count).run();
+      return json({ ok: true });
+    }
+
+    if (req.method === "GET" && p === "/api/box/followers") {
+      const { results: history } = await env.DB.prepare(
+        "SELECT ts, count FROM follower_snapshot ORDER BY ts DESC LIMIT 48"
+      ).all<{ ts: number; count: number }>();
+      // replies actually posted between the last two snapshots -> the delta's candidates
+      let acted = 0;
+      if (history.length >= 2) {
+        const r = await env.DB.prepare(
+          "SELECT COUNT(*) n FROM feedback WHERE action IN ('posted','posted_edited') AND ts > ? AND ts <= ?"
+        ).bind(history[1].ts, history[0].ts).first<{ n: number }>();
+        acted = r?.n ?? 0;
+      }
+      return json({ history, acted_between: acted });
+    }
+
     if (req.method === "POST" && p === "/api/box/capture") {
       const t = String(b?.text ?? "").trim();
       if (!t) return json({ error: "text required" }, 400);

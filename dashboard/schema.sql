@@ -126,3 +126,11 @@ CREATE TABLE IF NOT EXISTS capture (
   consumed INTEGER NOT NULL DEFAULT 0,
   created_at INTEGER NOT NULL
 );
+
+-- The ONLY metric that matters. Everything else (likes, replies) is a proxy. Nothing
+-- measured this, so nothing could optimise for it. Hourly snapshot -> deltas get
+-- attributed to the replies posted in that window.
+CREATE TABLE IF NOT EXISTS follower_snapshot (
+  ts INTEGER PRIMARY KEY,
+  count INTEGER NOT NULL
+);

@@ -362,3 +362,40 @@ brittle — the *same* near-duplicate scored 1.44 and 1.15 depending on one extr
 word, and idf drifts as the corpus grows. A first pass at 1.2 silently caught nothing.
 So the tau is env-tunable and every **near-miss is logged**, so it can be re-derived from
 real data instead of vibes. Re-calibrate as `chorus:posts` grows.
+
+## The growth engine: fast_lane.py + follower_track.py
+
+**The daily ranker was structurally incapable of growing followers.** Measured on the live
+queue: suggested tweets averaged `fresh` 0.79–0.83 — **8–10h old**, worst 0.557 (**21h**).
+Reply-guy growth only works if you land in the first ~10–20 replies while the thread is
+still being read. Hours later the reply section is buried, impressions collapse, and a
+reply earns ~0 followers. **Cadence was the bottleneck, and cadence was never a cost
+decision** — anchors-only polling is 1 chunked query:
+
+| cadence | credits/day | $/day |
+|---|---|---|
+| every 10m | 15,120 | **$0.151** |
+| every 30m | 5,040 | $0.050 |
+| daily (old) | 2,310 | $0.023 → **~0 growth** |
+
+against a **$0.65/day** ceiling. It was wrong, not expensive.
+
+`fast_lane.py` (every 10m) polls the high-reach anchors, keeps only tweets **<120m old with
+<60 replies**, and scores by `opportunity()` — deliberately NOT the daily ranker's score:
+
+- **reach** `log10(followers)/5` — a big account's reply section is a bigger stage
+- **earliness** `1/(1+replies/12)` — reply #5 beats reply #200
+- **freshness** — cliff-edges after 25m; a late reply is worth ~nothing
+
+It drafts + judges immediately, alerts `⚡ reply now`, and **expires the suggestion in 3h**
+because a fast-lane find is worthless once stale. First live run found @theo **7 minutes
+old, 24 replies, 360k followers** — an opportunity the daily cron would never have seen.
+
+`follower_track.py` (hourly) snapshots your follower count and attributes deltas to replies
+posted in that window. Nothing measured the actual goal before — `outcome_track` measures
+likes/replies, which are proxies, so nothing could optimise for followers.
+**Baseline: 1,093 → 10x = 10,930.** (`targets.json` said 400 only because that fetch is
+capped at 2 pages.)
+Honest: with one account and no control group this is **correlational, not causal** — a
+spike after replying to a 500k account is evidence, not proof. Still far better than
+optimising likes.

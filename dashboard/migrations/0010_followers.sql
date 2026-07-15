@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS follower_snapshot (
+  ts INTEGER PRIMARY KEY,
+  count INTEGER NOT NULL
+);
