@@ -647,7 +647,11 @@ def main():
     # --no-budget still skips them: that mode is for offline tests with no services at all.
     if not args.no_budget:
         voice = get_voice(voice)
-        examples = voice_context(",".join(pillars))
+        # SEMANTIC RAG: prime with your OWN past posts nearest THIS idea (the store is real
+        # Supermemory with embeddings, so this is nearest-neighbour, not keyword). Query by the
+        # idea content, not pillar names, so the few-shot examples actually resemble what we are
+        # about to draft. Falls back to pillars/voice docs inside voice_context.
+        examples = voice_context(idea.get("title") or ",".join(pillars))
         niche = niche_context()
 
     rid = None if args.dry_run else run_log(base, token, action="start").get("id")

@@ -505,12 +505,11 @@ def niche_context():
 def voice_context(topic, *, limit=3):
     """Voice priming from the memory service (chorus:self).
 
-    v0 does true RAG — semantic nearest-neighbour over the user's OWN past posts. We
-    cannot do that yet: chorus:self holds voice/profile docs (style), not a post
-    corpus, and the store does keyword not vector search. So: try a topic match first
-    (useful once onboard/voice_refine store topical examples), then FALL BACK to the
-    voice docs themselves. Returning [] silently would mean no priming at all, which
-    is exactly the bug this avoids.
+    This IS the v0 true-RAG path now: the store is real Supermemory with local embeddings,
+    so /v3/search over chorus:posts is SEMANTIC nearest-neighbour (verified: it matches a
+    keyword-free paraphrase, score ~0.67). Callers pass the IDEA content as the query, so the
+    few-shot examples are the user's own past posts most SIMILAR to what we are about to draft.
+    Falls back to the topic, then to chorus:self voice/profile docs, so priming is never empty.
     Best-effort — memory being down must never block drafting.
     """
     base = os.environ.get("SUPERMEMORY_BASE_URL", "http://localhost:8000").rstrip("/")
@@ -786,9 +785,13 @@ def run(args):
         # What is actually behind the link, so the drafter has something real to react to
         # instead of inventing it. Cheap (one GET, cached, SSRF-guarded) and fail-open.
         link = "" if args.dry_run else link_context(c.get("text") or "")
+        # PER-REPLY SEMANTIC RAG: your own past posts NEAREST this specific tweet (the store is
+        # real Supermemory with embeddings), not the batch-level pillar priming. Falls back to
+        # the batch `examples` if the per-tweet search comes back empty.
+        ex = examples if args.dry_run else (voice_context(c.get("text") or "") or examples)
         d = ({"angle": "dry", "angle_strength": 0.5, "drafts": ["dry"]}
              if args.dry_run else llm_draft(c, pillar, voice, model=model,
-                                            api_key=api_key, examples=examples,
+                                            api_key=api_key, examples=ex,
                                             niche=niche, link=link))
         if not args.dry_run:
             tracker.record("llm_draft", 1)      # book it as incurred, immediately
@@ -803,14 +806,14 @@ def run(args):
         scores = {}
         if not args.dry_run and drafts and not args.no_judge:
             scores = judge_draft(c, drafts[0], voice, model=model, api_key=api_key, link=link,
-                                 tracker=tracker, examples=examples)
+                                 tracker=tracker, examples=ex)
             passed, failed = G.judge_verdict(scores)
             if not passed:
                 print(f"  judge demoted @{c.get('author')} ({','.join(failed)}) - regenerating once")
                 try:
                     tracker.check("llm_draft", 1)
                     d2 = llm_draft(c, pillar, voice, model=model, api_key=api_key, link=link,
-                                   examples=examples, niche=niche)
+                                   examples=ex, niche=niche)
                     tracker.record("llm_draft", 1)
                     if d2.get("drafts"):
                         drafts = d2["drafts"]
