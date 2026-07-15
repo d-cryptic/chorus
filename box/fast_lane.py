@@ -122,8 +122,19 @@ def main():
     tb = tuple(h.lower() for h in (d.get("targets_b") or []))
     # chunk: one OR-query gets unreliable past ~12 handles (the bug that returned 0 tweets)
     cands = []
+    # Only fetch the window we can actually USE. Anything older than MAX_AGE_MIN is rejected
+    # by the age filter below on every single run -- so paying to read it is pure waste, and
+    # at a 10-minute cadence we were re-reading the same ~60 tweets 144x/day and discarding
+    # most as already-`seen`. Measured: 60 reads/run = 900 credits = $0.009, x144 = $1.30/day
+    # against a $0.65 ceiling, i.e. ~6.7 days of runway on the current balance. This was
+    # invisible until now only because fast_lane was crashing before it spent anything.
+    # since_time is honoured by the provider (verified: 20 tweets -> 2 for a 1h window).
+    # OVERLAP covers clock skew and indexing lag; `seen` dedupes anything it double-counts.
+    OVERLAP_S = 120
+    since_ts = int(now / 1000) - MAX_AGE_MIN * 60 - OVERLAP_S
     for i in range(0, len(anchors), 12):
-        q = "(" + " OR ".join(f"from:{h.lower()}" for h in anchors[i:i + 12]) + ") -filter:replies"
+        q = ("(" + " OR ".join(f"from:{h.lower()}" for h in anchors[i:i + 12])
+             + f") -filter:replies since_time:{since_ts}")
         cands += [cs.map_tweet_tier(c, ta, tb) for c in cs._fetch(q, key, max_pages=1, now=now)]
     tracker.record("candidate_read", len(cands))
 

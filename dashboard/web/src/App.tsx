@@ -36,6 +36,8 @@ export default function App() {
   const [counts, setCounts] = useState<any>({});
   const [spend, setSpend] = useState(0);
   const [credits, setCredits] = useState<number | null>(null);
+  // measured from run_log balances, not a magic constant that was ~50x optimistic
+  const [burn, setBurn] = useState<number | null>(null);
   const [beat, setBeat] = useState("");
   const [alerts, setAlerts] = useState<any[]>([]);
   const [cfg, setCfg] = useState<any>(null);
@@ -71,7 +73,7 @@ export default function App() {
     ]);
     setItems(sg.suggestions || []); setCounts(sg.counts || {});
     setSpend(Number(sp.total) || 0); setCfg(cf.settings || null);
-    setAlerts(st.alerts || []); setCredits(st.lastRun?.credits ?? null);
+    setAlerts(st.alerts || []); setCredits(st.lastRun?.credits ?? null); setBurn(st.creditsPerDay ?? null);
     const r = st.lastRun;
     setBeat(r?.started_at ? `${Math.round((Date.now() - r.started_at) / 3.6e6)}h ago · ${r.suggested ?? 0}` : "no cycle yet");
     setCursor(0); setLoading(false);
@@ -345,7 +347,8 @@ export default function App() {
           {credits !== null && (
             <Stat label="provider credits" danger={credits < 5000}
                   value={credits >= 1000 ? `${Math.round(credits / 1000)}k` : String(credits)}
-                  sub={`~${Math.max(0, Math.floor(credits / 8600))}d runway`} />
+                  sub={burn ? `~${Math.max(0, Math.floor(credits / burn))}d runway · ${(burn / 1000).toFixed(1)}k/day`
+                             : "runway: measuring…"} />
           )}
           <Stat label="queued · acted today" value={`${counts.queued ?? 0} · ${(counts.posted ?? 0) + (counts.dismissed ?? 0)}`} />
           <Stat label="state" danger={Boolean(cfg?.killed)}

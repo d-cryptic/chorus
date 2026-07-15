@@ -39,7 +39,7 @@ const DATA = {
         longform: "picking anchors by follower count feels like quality control. it isn't. ".repeat(9),
         drafts: ["a follower floor is a timezone filter wearing a quality-control hat."] }),
   ]},
-  "/api/status": { lastRun: { started_at: now - 240000, finished_at: now - 200000, suggested: 3, error: null, credits: 981000 }, alerts: [] },
+  "/api/status": { lastRun: { started_at: now - 240000, finished_at: now - 200000, suggested: 3, error: null, credits: 981000 }, alerts: [], creditsPerDay: 12400 },
   "/api/settings": { settings: { paused: 0, killed: 0, autonomy: "suggest", daily_ceiling_usd: 0.65, quiet_hours: "0-7" } },
   "/api/spend": { total: 0.5063 },
   "/api/insights": { insights: [

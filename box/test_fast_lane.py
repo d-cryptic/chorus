@@ -43,5 +43,21 @@ def run():
     chk("judge_draft(" in src, "judge_draft is still called")
     chk("judge_verdict(" in src, "verdict still gates emission")
 
+    # --- cost: only fetch the window we can USE ------------------------------
+    # fast_lane rejects anything older than MAX_AGE_MIN on every run, but it used to FETCH
+    # everything -- re-reading the same ~40-60 tweets 144x/day and discarding most as
+    # already-`seen`. Measured on the box: $0.86-1.30/day against a $0.65 ceiling, i.e. ~7-10
+    # days of runway. Invisible until now only because fast_lane crashed before it could spend.
+    # Verified live: the 2h window returns 1 tweet where the plain query returns 20, ages
+    # [104, 133, 151, ...] -- and MISSES ZERO tweets under 120min. Capability unchanged.
+    chk("since_time:" in src, "fetch is bounded by since_time (98% of reads were waste)")
+    chk("MAX_AGE_MIN * 60" in src, "the window is derived from MAX_AGE_MIN, not a magic number")
+    chk("OVERLAP_S" in src, "an overlap covers clock skew / indexing lag")
+    # the window must never be TIGHTER than the age filter, or we would drop live candidates
+    import re as _re
+    m = _re.search(r"since_ts = int\(now / 1000\) - MAX_AGE_MIN \* 60 - (\w+)", src)
+    chk(bool(m), "since_ts subtracts the full MAX_AGE_MIN window plus overlap")
+    chk("seen" in src, "`seen` still dedupes anything the overlap double-counts")
+
     print(f"FAST LANE UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())

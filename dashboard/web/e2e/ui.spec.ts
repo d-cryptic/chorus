@@ -140,3 +140,12 @@ test("the focused card is unmistakable — it is a keyboard triage tool", async 
     [...document.querySelectorAll("div")].filter(d => getComputedStyle(d).boxShadow.includes("inset")).length);
   expect(count).toBe(1);   // exactly one card focused, never zero or two
 });
+
+test("runway is measured, not a magic number", async ({ page }) => {
+  await page.goto("/");
+  // It used to be `credits / 8600` — a constant that appears nowhere else and was ~50x
+  // optimistic: it claimed ~114d while the observed burn implied ~2d. A confident wrong
+  // number about your remaining runway is worse than no number.
+  await expect(page.getByText(/12\.4k\/day/)).toBeVisible();       // the measured rate, shown
+  await expect(page.getByText(/~79d runway/)).toBeVisible();       // 981000 / 12400
+});

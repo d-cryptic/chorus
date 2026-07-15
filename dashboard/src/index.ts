@@ -107,7 +107,23 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
       const { results: alerts } = await env.DB.prepare(
         "SELECT started_at, error FROM run_log WHERE error IS NOT NULL AND id > ?1 AND started_at > ?2 ORDER BY id DESC LIMIT 5"
       ).bind(lastOk?.id ?? 0, Date.now() - 7 * 86400000).all();
-      return json({ lastRun: row ?? null, alerts });
+      // Runway was `credits / 8600` — a magic number that appears nowhere else and was
+      // simply wrong (it claimed ~114d while the observed burn implied ~2d). run_log records
+      // the provider balance at each cycle, so the burn rate is OBSERVABLE: take the oldest
+      // and newest readings in the window and divide by elapsed time. Needs >=2 readings and
+      // a real time span, else we would divide by ~0 and print a confident garbage number.
+      const { results: bal } = await env.DB.prepare(
+        "SELECT started_at, credits FROM run_log WHERE credits IS NOT NULL AND started_at > ?1 ORDER BY started_at ASC"
+      ).bind(Date.now() - 7 * 86400000).all<{ started_at: number; credits: number }>();
+      let creditsPerDay: number | null = null;
+      if (bal.length >= 2) {
+        const first = bal[0], last = bal[bal.length - 1];
+        const days = (last.started_at - first.started_at) / 86400000;
+        const burned = first.credits - last.credits;
+        // a top-up makes `burned` negative; that is not a burn rate, it is new money
+        if (days > 0.02 && burned > 0) creditsPerDay = Math.round(burned / days);
+      }
+      return json({ lastRun: row ?? null, alerts, creditsPerDay });
     }
     // Human control surface for the safety switches. Without this the kill-switch is
     // only reachable via raw SQL, which makes it useless in the moment you need it.
