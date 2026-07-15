@@ -431,3 +431,20 @@ land within minutes, earliness → 0, and you are reply #2000. **Reach you canno
 on is worthless.** It now applies a follower CEILING (800k), a median-replies test (≤80 —
 the honest "can I be early?" check) and an on-pillar test. It runs `--dry-run` weekly: it
 proposes, a human decides.
+
+## Reading the room (conversation context)
+
+The drafter was **context-blind**: it saw one tweet and no idea what conversation it was
+walking into. The single biggest reason a reply is ignored is that twenty people already
+made the same point — and it would confidently write reply #21.
+
+`candidate_source.existing_replies()` pulls the top existing replies (by likes — the loudest
+voices set the room). `fast_lane` fetches them ONLY for candidates it is about to draft
+(+1 request, ~165cr; at ~30 real drafts/day that is ~$0.05/day), passes them as
+`<already_said>` with an explicit "do not repeat these, find the angle nobody took", and
+the judge grades `distinct` against the ROOM rather than just the tweet.
+
+**Honest:** an A/B on one live tweet was **inconclusive** — the room there was mostly noise
+("Yes you can!!!"), and the blind draft was arguably punchier. The mechanism is sound and
+cheap, and it should matter most where the room has real takes to avoid, but no win is
+claimed from one sample.

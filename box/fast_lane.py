@@ -155,14 +155,20 @@ def main():
         except B.BudgetError as e:
             print(f"  stopped ({e.reason})"); break
         pillar = next((p for p in pillars if p.lower() in (c.get("text") or "").lower()), None)
+        # read the room before speaking: reply #21 saying what 20 people said is invisible
+        room = cs.existing_replies(c.get("id"), key, limit=10, now=now)
+        tracker.record("candidate_read", len(room))
+        if room:
+            print(f"  room: {len(room)} replies already under @{c.get('author')}")
         dr = llm_draft(c, pillar, voice, model=model, api_key=api_key,
-                       examples=examples, niche=niche)
+                       examples=examples, niche=niche, room=room)
         tracker.record("llm_draft", 1)
         drafts = dr.get("drafts") or []
         if not drafts:
             continue
-        scores = judge_draft(c, drafts[0], voice, model=model, api_key=api_key,
-                             tracker=tracker, examples=examples)
+        scores = judge_draft(c, drafts[0], voice, model=model, api_key=api_key, tracker=tracker,
+                             examples=examples + tuple(f"(already said) {r['text'][:90]}"
+                                                       for r in room[:5]))
         passed, failed = G.judge_verdict(scores)
         if not passed:
             print(f"  judge rejected @{c.get('author')} ({','.join(failed)})")
