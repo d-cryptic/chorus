@@ -231,7 +231,12 @@ def main():
         print("  no posts cleared the engagement floor - nothing to learn from")
         return
 
-    tracker = B.BudgetTracker(spent=0.0, ceiling=10.0) if args.dry_run else None
+    # A --dry-run here makes REAL paid calls (it does not stub the LLM), so it uses the
+    # REAL budget. The fake $10 ceiling meant a dry-run could spend past the breaker and
+    # never hit the ledger — the money is real, so the accounting is. --no-budget is for
+    # offline tests that stub the network, not for previewing past the ceiling.
+    tracker = (B.BudgetTracker(spent=0.0, ceiling=10.0)
+               if getattr(args, "no_budget", False) else None)
     d = mine(posts, model=model, api_key=api_key, tracker=tracker, mode=args.mode)
     if not d:
         return

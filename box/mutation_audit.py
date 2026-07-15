@@ -26,6 +26,9 @@ MUTANTS = [
     ("session_mine.py", 'new1_|AIza)[A-Za-z0-9_\\-]{8,}', 'ZZZZ_NEVER_MATCHES)',
      "REDACTION: L1 key regex neutered"),
     ("session_mine.py", "def leaks(", "def _dead_leaks(", "REDACTION: L3 leak check removed"),
+    # --dry-run was a hole straight through the breaker: fake $10 ceiling, real paid calls.
+    ("post_gen.py", "if not args.no_budget:\n        flush_spend", "if False:\n        flush_spend",
+     "BUDGET: dry-run spend goes unbooked again"),
     ("ranker.py", "def get_voice(fallback):",
      'def _autopost(t, k):\n    return _req("https://api.x.com/2/tweets", "POST", k, {"text": t})\n\n\ndef get_voice(fallback):',
      "SUGGEST-ONLY: a real write lane added"),

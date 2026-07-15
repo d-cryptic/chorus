@@ -120,6 +120,30 @@ def run():
         chk(False, "on_demand must NOT override the ceiling")
     except B.BudgetExceeded: chk(True, "on_demand does not override the ceiling")
 
+    # --- --dry-run must not be a hole through the breaker ---------------------------
+    # It meant "do not WRITE to the queue". It did NOT mean "spend without a limit" — but
+    # post_gen/fast_lane/style_mine each built a fake $10 ceiling and then made REAL paid LLM
+    # calls the true ceiling never saw and the ledger never recorded. That is why the provider
+    # credits fell faster than the ledger could explain today, and I wrongly blamed my own
+    # ad-hoc test runs for the gap. The money is real, so the accounting is real.
+    import inspect, glob as _g, os as _os
+    for path in ("post_gen.py", "fast_lane.py", "style_mine.py"):
+        src = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), path)).read()
+        fake = "ceiling=10.0" in src
+        # a fake ceiling is only allowed behind --no-budget (offline, network stubbed)
+        chk(not fake or "no_budget" in src,
+            f"{path}: a fake ceiling exists ONLY behind --no-budget")
+    # post_gen must book a dry-run's spend: those LLM calls were real
+    pg = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "post_gen.py")).read()
+    chk("if not args.no_budget:\n        flush_spend" in pg,
+        "post_gen flushes spend even on a dry-run (only --no-budget is exempt)")
+    chk("if not args.dry_run:\n        run_log" in pg,
+        "...but still does NOT write suggestions on a dry-run — that is what dry means")
+    # ranker is the counter-example worth keeping: its dry-run STUBS the llm, so its fake
+    # ceiling costs nothing. Assert that stays true, or the exemption stops being honest.
+    rk = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "ranker.py")).read()
+    chk("if args.dry_run else llm_draft(" in rk, "ranker's dry-run really is dry (stubs the LLM)")
+
     print(f"BUDGET UNIT: {p} passed, {f} failed"); return f
 
 import sys; sys.exit(run())

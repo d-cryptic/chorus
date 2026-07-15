@@ -422,6 +422,11 @@ def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker
 def main():
     ap = argparse.ArgumentParser(description="Chorus: suggest what to POST (not reply)")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--no-budget", action="store_true",
+                    help="ONLY with --dry-run, and ONLY offline: skip the real budget. A "
+                         "dry-run still makes paid LLM calls, so by default it uses (and "
+                         "records) the real budget. This flag is for tests that stub the "
+                         "network, not for 'just previewing' past the ceiling.")
     ap.add_argument("--cap", type=int, default=CAP_PER_DAY)
     ap.add_argument("--tau", type=float, default=0.55, help="min strength to queue")
     ap.add_argument("--no-timeline", action="store_true", help="skip the paid timeline source")
@@ -434,8 +439,14 @@ def main():
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
     now = int(time.time() * 1000)
 
-    if args.dry_run:
-        tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)
+    # --dry-run means "do not WRITE to the queue". It never meant "spend without a limit",
+    # but that is what it did: it built a fake $10 ceiling and then made real, paid LLM calls
+    # that the real ceiling never saw and the ledger never recorded. That is a hole straight
+    # through the circuit breaker — and it is why today's provider credits fell faster than
+    # the ledger could explain. The money is real, so the accounting is real. If the budget
+    # is spent, a dry-run is refused too, which is correct: there is nothing left to spend.
+    if args.dry_run and args.no_budget:
+        tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)   # offline/CI only: makes no paid call
     else:
         from ranker import get_budget
         try:
@@ -473,6 +484,7 @@ def main():
         niche = niche_context()
 
     rid = None if args.dry_run else run_log(base, token, action="start").get("id")
+    # a dry-run makes REAL paid calls, so its spend is booked like any other
     emitted = 0
     for idea in ideas:
         if emitted >= args.cap:
@@ -514,6 +526,11 @@ def main():
 
     if not args.dry_run:
         run_log(base, token, id=rid, suggested=emitted)
+    # Spend is flushed even on a --dry-run: the LLM calls it just made were REAL and cost
+    # real money. Skipping this is what let dry-runs drain the provider off the books while
+    # the ceiling reported plenty of headroom. Only --no-budget (offline tests) is exempt,
+    # because it makes no paid call at all.
+    if not args.no_budget:
         flush_spend(base, token, tracker, source="post_gen")
     print(f"queued {emitted} post idea(s), spent ${tracker.spent} of ${tracker.ceiling}")
 

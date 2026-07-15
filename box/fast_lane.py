@@ -102,7 +102,14 @@ def main():
         return
 
     if args.dry_run:
-        tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)
+        # A --dry-run here makes REAL paid calls (it does not stub the LLM), so it uses the
+        # REAL budget. The fake $10 ceiling meant a dry-run could spend past the breaker and
+        # never hit the ledger — the money is real, so the accounting is. --no-budget is for
+        # offline tests that stub the network, not for previewing past the ceiling.
+        if args.no_budget:
+            tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)
+        else:
+            raise SystemExit("fast_lane --dry-run makes paid calls: pass --no-budget (offline) or run it for real")
         voice = os.environ.get("CHORUS_VOICE", "concise")
     else:
         try:
