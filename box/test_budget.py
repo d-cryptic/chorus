@@ -1,6 +1,9 @@
 import budget as B
 
 def run():
+    import os as _envos
+    _env_saved = _envos.environ.pop("CHORUS_DRAFT_PROVIDER", None)
+    import importlib as _ilb; _ilb.reload(B)
     p = f = 0
     def chk(c, l):
         nonlocal p, f
@@ -209,6 +212,31 @@ def run():
     chk('niche = "" if args.dry_run else niche_context()' not in fl_src,
         "fast_lane: same")
 
+    
+    # subscription drafting makes LLM ops $0 (real cost is the flat sub fee, not per-call).
+    # Fix for the phantom-cost ceiling block: free subscription drafts were eating the read
+    # budget and refusing fetches.
+    import os as _o, importlib as _il
+    _saved = _o.environ.get("CHORUS_DRAFT_PROVIDER")
+    try:
+        _o.environ["CHORUS_DRAFT_PROVIDER"] = "hermes:xai-oauth:grok-4.5"
+        _il.reload(B)
+        chk(B.estimate_cost_usd("llm_draft") == 0.0, "subscription -> llm_draft is $0")
+        chk(B.estimate_cost_usd("llm_judge") == 0.0, "subscription -> llm_judge is $0")
+        chk(B.estimate_cost_usd("candidate_read") == 0.00015, "reads still cost real money")
+        _o.environ["CHORUS_DRAFT_PROVIDER"] = ""
+        _il.reload(B)
+        chk(B.estimate_cost_usd("llm_draft") == 0.0003, "no subscription -> real llm estimate")
+    finally:
+        if _saved is None:
+            _o.environ.pop("CHORUS_DRAFT_PROVIDER", None)
+        else:
+            _o.environ["CHORUS_DRAFT_PROVIDER"] = _saved
+        _il.reload(B)
+
+    if _env_saved is not None:
+        _envos.environ["CHORUS_DRAFT_PROVIDER"] = _env_saved
+    _ilb.reload(B)
     print(f"BUDGET UNIT: {p} passed, {f} failed"); return f
 
 import sys; sys.exit(run())

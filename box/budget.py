@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Chorus budget guard — cost ceiling, kill-switch, autonomy, provider breaker.
+"""
+import osChorus budget guard — cost ceiling, kill-switch, autonomy, provider breaker.
 
 Summary: ports the v0 nakama BudgetTracker semantics. The rule that matters is
 `would_exceed` is checked BEFORE every paid call (v0: "no silent skip/shallow —
@@ -13,6 +14,7 @@ v0 mapping: BudgetTracker (packages/core/src/budget.ts), flags:scraping_kill,
 scraping-deep-dive breaker/DLQ, agentic-infra autonomy levels.
 """
 from __future__ import annotations
+import os
 
 # ---- cost model -------------------------------------------------------------
 # USD per unit. Deliberately conservative: over-estimating pauses early (safe),
@@ -50,10 +52,28 @@ class BudgetExceeded(BudgetError):
     reason = "ceiling"
 
 
+_LLM_OPS = {"llm_draft", "llm_judge", "llm_synth"}
+
+
+def _drafting_is_subscription() -> bool:
+    """True when drafting routes through a $0-marginal SUBSCRIPTION (grok/codex via Hermes or a
+    logged-in CLI). Then LLM calls cost no real money, so they must not consume the ceiling that
+    exists to cap REAL spend (twitterapi reads). Phantom LLM estimates eating the read budget is
+    exactly what blocked fetches with the whole account on free subscriptions."""
+    p = os.environ.get("CHORUS_DRAFT_PROVIDER", "")
+    return p.startswith("hermes:") or p.startswith("cli:")
+
+
 def estimate_cost_usd(op: str, count: int = 1) -> float:
-    """Cost of `count` units of `op`. Unknown ops are NOT free — refuse to guess."""
+    """Cost of `count` units of `op`. Unknown ops are NOT free — refuse to guess.
+
+    LLM ops (draft/judge/synth) are $0 when drafting is on a subscription: the real cost is the
+    subscription flat fee, not per-call, so counting per-call estimates against the ceiling
+    phantom-blocks real reads. Reads/research/embeds still cost real money and are always counted."""
     if op not in RATES:
         raise KeyError(f"no rate for op {op!r}; add it to RATES (never assume free)")
+    if op in _LLM_OPS and _drafting_is_subscription():
+        return 0.0
     return round(RATES[op] * max(0, count), 6)
 
 

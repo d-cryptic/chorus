@@ -329,6 +329,18 @@ export default function App() {
                     title="kill-switch" className="p-2 rounded-full hover:bg-secondary">
               <OctagonX size={16} style={{ color: cfg?.killed ? "var(--destructive)" : DIM }} />
             </button>
+            <button onClick={() => {
+                      const cur = cfg?.daily_ceiling_usd ?? 0.65;
+                      const v = prompt(`Daily budget ceiling in USD (real reads only — subscription drafting is $0).\nCurrent: $${cur}`, String(cur));
+                      if (v == null) return;
+                      const n = Number(v);
+                      if (!Number.isFinite(n) || n < 0 || n > 100) { flash("ceiling must be 0..100"); return; }
+                      setSetting({ daily_ceiling_usd: n });
+                    }}
+                    title="daily budget ceiling" className="mono p-2 rounded-full hover:bg-secondary text-[12px]"
+                    style={{ color: DIM }}>
+              ${(cfg?.daily_ceiling_usd ?? 0.65).toFixed(2)}
+            </button>
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
@@ -401,7 +413,7 @@ export default function App() {
       <aside className="hidden lg:block w-[350px] shrink-0 px-6 py-3 sticky top-0 h-screen">
         <div className="rounded-2xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
           <h2 className="text-[12px] font-medium uppercase tracking-[0.14em] mb-3" style={{ color: "var(--muted-foreground)" }}>Agent</h2>
-          <Stat label="spend today" value={`$${spend.toFixed(2)}`} />
+          <Stat label="spend today" danger={spend > (cfg?.daily_ceiling_usd ?? 0.65)} value={`$${spend.toFixed(2)} / $${(cfg?.daily_ceiling_usd ?? 0.65).toFixed(2)}`} />
           {credits !== null && (
             <Stat label="provider credits" danger={credits < 5000}
                   value={credits >= 1000 ? `${Math.round(credits / 1000)}k` : String(credits)}
