@@ -1,26 +1,73 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-:root{ --radius:0.6rem; }
-.dark{
-  --background:240 10% 4%; --foreground:0 0% 96%;
-  --card:240 6% 8%; --card-foreground:0 0% 96%;
-  --primary:142 45% 55%; --primary-foreground:240 10% 6%;
-  --secondary:240 5% 14%; --secondary-foreground:0 0% 92%;
-  --muted:240 5% 14%; --muted-foreground:240 5% 62%;
-  --accent:240 5% 16%; --accent-foreground:0 0% 96%;
-  --destructive:0 62% 55%; --destructive-foreground:0 0% 98%;
-  --border:240 5% 16%; --input:240 5% 16%; --ring:142 45% 55%;
+
+/* Self-hosted. No CDN, no network dependency, ~30kb each. */
+@font-face {
+  font-family: "Instrument Sans";
+  src: url("/fonts/instrument-sans.woff2") format("woff2");
+  font-weight: 400 700; font-style: normal; font-display: swap;
 }
-*{ border-color:hsl(var(--border)); }
-/* X's actual stack. Chirp is proprietary and not served here, so we fall through to the
-   same system faces X falls back to — this is the single biggest "feels like X" factor. */
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("/fonts/jetbrains-mono.woff2") format("woff2");
+  font-weight: 400 600; font-style: normal; font-display: swap;
+}
+
+:root{
+  --radius: 0.85rem;
+
+  /* CANVAS — a warm near-black, not #000. Pure black is what makes a dark UI read
+     cheap: every border has to fight it, and there is nowhere to build depth.
+     Near-black + layered surfaces is what Linear/Superhuman do. */
+  --bg:        #0a0a0c;
+  --surface:   #101013;   /* rails, panels */
+  --surface-2: #16161a;   /* hover, insets */
+  --line:      #1e1e23;   /* hairline. X uses #2f3336 — too loud once the bg is calm */
+  --line-soft: #17171b;
+
+  --text:      #f4f4f5;
+  --muted:     #8b8b96;
+  --faint:     #5c5c66;
+
+  /* ONE accent. Restraint is the whole trick — X blue is reserved for X-NATIVE things
+     (links, entities, the Post action). Chorus's own chrome never borrows it. */
+  --x-blue:    #1d9bf0;
+  --accent:    #d8d8dc;   /* chrome accent = near-white. quiet, expensive-looking */
+  --danger:    #f4212e;
+  --warn:      #ffd400;
+  --good:      #00ba7c;
+}
+
+*{ border-color: var(--line); }
+
 body{
-  background:#000; color:#e7e9ea;
-  font-family:"TwitterChirp","Chirp",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,
-              "Helvetica Neue",Arial,sans-serif;
-  -webkit-font-smoothing:antialiased;
-  -moz-osx-font-smoothing:grayscale;
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Instrument Sans", ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: "ss01", "cv01";
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  letter-spacing: -0.011em;   /* grotesks need a hair of negative tracking to look set */
 }
-/* X's scrollbar + selection */
-::selection{ background:rgba(29,155,240,.35); }
+
+/* THE ONE PLACE WE DO NOT GET CREATIVE.
+   A draft must be judged as it will actually appear on X, so the tweet body renders in
+   X's own stack at X's own metrics. Chrome is ours; content is theirs. */
+.x-body{
+  font-family: "TwitterChirp", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  font-size: 15px; line-height: 20px; letter-spacing: normal;
+}
+
+.mono{ font-family: "JetBrains Mono", ui-monospace, monospace; font-feature-settings: "zero"; }
+
+::selection{ background: rgba(29,155,240,.28); }
+::-webkit-scrollbar{ width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb{ background: #26262c; border-radius: 8px; border: 3px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover{ background: #32323a; }
+::-webkit-scrollbar-track{ background: transparent; }
+
+/* Page load: one orchestrated reveal beats scattered micro-interactions. */
+@keyframes rise { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: none; } }
+.rise{ animation: rise .32s cubic-bezier(.16,1,.3,1) both; }

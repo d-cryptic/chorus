@@ -6,9 +6,9 @@ import { cn } from "@/lib/utils";
  *  no fake verified badges, no fake timestamps. Inventing UI data is the same sin as
  *  inventing a stat in a draft — it makes a draft indistinguishable from a real tweet. */
 
-export const X_BLUE = "#1d9bf0";
-export const DIM = "#71767b";
-export const LINE = "#2f3336";
+export const X_BLUE = "var(--x-blue)";
+export const DIM = "var(--muted)";
+export const LINE = "var(--line)";
 
 const URL_RE = /https?:\/\/\S+/g;
 const CJK = /[ᄀ-ᇿ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
@@ -28,8 +28,10 @@ export function tweetLength(s: string): number {
 function Avatar({ handle, size = 40 }: { handle: string; size?: number }) {
   const letter = (handle || "?").replace(/^@/, "").charAt(0).toUpperCase();
   return (
-    <div className="shrink-0 rounded-full grid place-items-center font-semibold text-white select-none"
-         style={{ width: size, height: size, fontSize: size * 0.42, background: "#536471" }} aria-hidden>
+    <div className="shrink-0 rounded-full grid place-items-center font-semibold select-none"
+         style={{ width: size, height: size, fontSize: size * 0.4,
+                  background: "linear-gradient(160deg,#26262e,#17171c)",
+                  border: "1px solid var(--line)", color: "var(--muted)" }} aria-hidden>
       {letter}
     </div>
   );
@@ -38,7 +40,7 @@ function Avatar({ handle, size = 40 }: { handle: string; size?: number }) {
 export function TweetText({ text }: { text: string }) {
   const parts = (text || "").split(/(https?:\/\/\S+|@\w{1,15}|#\w+)/g);
   return (
-    <div className="whitespace-pre-wrap break-words" style={{ fontSize: 15, lineHeight: "20px", color: "#e7e9ea" }}>
+    <div className="x-body whitespace-pre-wrap break-words" style={{ color: "var(--text)" }}>
       {parts.map((p, i) =>
         /^(https?:\/\/|@|#)/.test(p) ? <span key={i} style={{ color: X_BLUE }}>{p}</span> : <span key={i}>{p}</span>
       )}
@@ -61,20 +63,20 @@ export function Tweet({
 }) {
   const a = age(ts);
   return (
-    <div className="flex gap-3 px-4 pt-3">
+    <div className="flex gap-3 px-4 pt-3.5">
       <div className="flex flex-col items-center shrink-0">
         <Avatar handle={handle} />
         {/* X's thread connector: a rail from this avatar to the next. X does NOT indent. */}
         {connector && <div className="w-0.5 grow mt-1" style={{ background: "#333639" }} />}
       </div>
-      <div className="min-w-0 flex-1 pb-3">
-        <div className="flex items-center gap-1 text-[15px] leading-5">
-          <span className="font-bold truncate" style={{ color: "#e7e9ea" }}>{name || handle.replace(/^@/, "")}</span>
+      <div className="min-w-0 flex-1 pb-3.5">
+        <div className="x-body flex items-center gap-1">
+          <span className="font-bold truncate" style={{ color: "var(--text)" }}>{name || handle.replace(/^@/, "")}</span>
           <span className="truncate" style={{ color: DIM }}>@{handle.replace(/^@/, "")}</span>
           {a && <><span style={{ color: DIM }}>·</span><span style={{ color: DIM }}>{a}</span></>}
         </div>
         {replyingTo && (
-          <div className="text-[15px] leading-5 mb-0.5" style={{ color: DIM }}>
+          <div className="x-body mb-0.5" style={{ color: DIM }}>
             Replying to <span style={{ color: X_BLUE }}>@{replyingTo.replace(/^@/, "")}</span>
           </div>
         )}
@@ -89,9 +91,9 @@ export function Tweet({
 export function GifChip({ q }: { q: string }) {
   return (
     <a href={`https://giphy.com/search/${encodeURIComponent(q)}`} target="_blank" rel="noreferrer"
-       className="mt-2 inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[13px] font-mono no-underline"
-       style={{ border: `1px dashed ${LINE}`, color: DIM }}>
-      <span className="font-bold" style={{ color: DIM }}>GIF to add:</span>
+       className="mono mt-2 inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] no-underline transition-colors hover:bg-[var(--surface-2)]"
+       style={{ border: `1px dashed var(--line)`, color: "var(--faint)" }}>
+      <span style={{ color: "var(--faint)" }}>GIF</span>
       <span style={{ color: X_BLUE }}>{q}</span>
     </a>
   );
@@ -99,8 +101,8 @@ export function GifChip({ q }: { q: string }) {
 
 export function Counter({ text }: { text: string }) {
   const n = tweetLength(text);
-  const color = n > 280 ? "#f4212e" : n >= 260 ? "#ffd400" : DIM;
-  return <span className="text-[13px] font-mono" style={{ color }}>{n}/280</span>;
+  const color = n > 280 ? "var(--danger)" : n >= 260 ? "var(--warn)" : "var(--faint)";
+  return <span className="mono text-[12px] tabular-nums" style={{ color }}>{n}/280</span>;
 }
 
 export { cn };

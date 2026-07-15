@@ -165,14 +165,17 @@ export default function App() {
 
   return (
     <TooltipProvider delayDuration={300}>
-    <div className="min-h-screen flex justify-center" style={{ background: "#000", color: "#e7e9ea" }}>
-      <main className="w-full max-w-[600px]" style={{ borderLeft: `1px solid ${LINE}`, borderRight: `1px solid ${LINE}` }}>
+    <div className="min-h-screen flex justify-center" style={{ background: "var(--bg)", color: "var(--text)" }}>
+      {/* mirror of the right rail: balances the composition so the FEED is centred */}
+      <div className="hidden lg:block w-[350px] shrink-0" aria-hidden />
+
+      <main className="w-full max-w-[600px]" style={{ borderLeft: `1px solid var(--line-soft)`, borderRight: `1px solid var(--line-soft)`, background: "linear-gradient(180deg,rgba(255,255,255,.012),transparent 240px)" }}>
         <header className="sticky top-0 z-10 flex items-center gap-3 px-4 h-[53px] backdrop-blur"
-                style={{ background: "rgba(0,0,0,.65)", borderBottom: `1px solid ${LINE}` }}>
-          <span className="text-[20px] font-black leading-none">✳</span>
-          <h1 className="text-[20px] font-bold">Queue</h1>
-          <span className="text-[13px] font-mono flex items-center gap-1" style={{ color: DIM }}>
-            <Activity size={12} /> {beat}
+                style={{ background: "color-mix(in srgb, var(--bg) 72%, transparent)", borderBottom: `1px solid var(--line-soft)` }}>
+          <span className="text-[17px] leading-none" style={{ color: "var(--faint)" }}>✳</span>
+          <h1 className="text-[19px] font-semibold tracking-[-0.02em]">Queue</h1>
+          <span className="mono text-[11px] flex items-center gap-1.5 tracking-tight" style={{ color: "var(--faint)" }}>
+            <Activity size={11} /> {beat}
           </span>
           <div className="ml-auto flex items-center gap-1">
             <button onClick={() => setSetting({ paused: cfg?.paused ? 0 : 1 })} title="pause / resume"
@@ -194,9 +197,10 @@ export default function App() {
             <Tooltip>
               <TooltipTrigger asChild>
                 <button onClick={fetchNow} disabled={fetching}
-                  className="ml-1 rounded-full px-3 py-1.5 text-[13px] font-bold disabled:opacity-50 flex items-center gap-1.5"
-                  style={{ background: X_BLUE, color: "#fff" }}>
-                  <Download size={13} /> {fetching ? "Fetching…" : "Fetch"}
+                  className="ml-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium disabled:opacity-40
+                             flex items-center gap-1.5 transition-colors hover:bg-[var(--surface-2)]"
+                  style={{ border: "1px solid var(--line)", color: "var(--muted)" }}>
+                  <Download size={12.5} /> {fetching ? "Fetching…" : "Fetch"}
                 </button>
               </TooltipTrigger>
               <TooltipContent>pull new tweets + replies now (runs a real cycle, ~1-2 min)</TooltipContent>
@@ -208,7 +212,7 @@ export default function App() {
           <TabsList>
             {["queued", "posts", "posted", "dismissed", "insights"].map((t) => (
               <TabsTrigger key={t} value={t}>
-                {t}{counts[t] ? <span className="ml-1 font-mono opacity-60">{counts[t]}</span> : null}
+                {t}{counts[t] ? <span className="mono ml-1.5 text-[11px] tabular-nums opacity-50">{counts[t]}</span> : null}
               </TabsTrigger>
             ))}
           </TabsList>
@@ -220,7 +224,7 @@ export default function App() {
           : status === "insights" ? <Insights data={insights} />
           : items.length === 0 && !blocked ? <Empty beat={beat} onRefresh={load} />
           : items.map((s, i) => (
-              <Card key={s.id} s={s} focused={i === cursor} onFocus={() => setCursor(i)}
+              <Card key={s.id} i={i} s={s} focused={i === cursor} onFocus={() => setCursor(i)}
                     pick={pick[s.id] ?? 0} setPick={(n: number) => setPick((p) => ({ ...p, [s.id]: n }))}
                     editing={editing === s.id} setEditing={(v: boolean) => setEditing(v ? s.id : null)}
                     dismissing={dismissing === s.id} setDismissing={(v: boolean) => setDismissing(v ? s.id : null)}
@@ -230,8 +234,8 @@ export default function App() {
       </main>
 
       <aside className="hidden lg:block w-[350px] shrink-0 px-6 py-3 sticky top-0 h-screen">
-        <div className="rounded-2xl p-4" style={{ background: "#16181c" }}>
-          <h2 className="text-[20px] font-black mb-2">Agent</h2>
+        <div className="rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--line-soft)" }}>
+          <h2 className="text-[12px] font-medium uppercase tracking-[0.14em] mb-3" style={{ color: "var(--faint)" }}>Agent</h2>
           <Stat label="spend today" value={`$${spend.toFixed(2)}`} />
           {credits !== null && (
             <Stat label="provider credits" danger={credits < 5000}
@@ -241,8 +245,10 @@ export default function App() {
           <Stat label="queued · acted today" value={`${counts.queued ?? 0} · ${(counts.posted ?? 0) + (counts.dismissed ?? 0)}`} />
           <Stat label="state" danger={Boolean(cfg?.killed)}
                 value={cfg?.killed ? "KILLED" : cfg?.paused ? "paused" : "running"} />
-          <button onClick={() => setHelp(true)} className="mt-3 text-[13px] font-mono hover:underline" style={{ color: DIM }}>
-            keyboard shortcuts (?)
+          <button onClick={() => setHelp(true)}
+            className="mono mt-4 w-full rounded-lg py-2 text-[11px] transition-colors hover:bg-[var(--surface-2)]"
+            style={{ border: "1px solid var(--line-soft)", color: "var(--faint)" }}>
+            shortcuts  ?
           </button>
         </div>
       </aside>
@@ -257,7 +263,7 @@ export default function App() {
 
 function scoreColor(n: number) { return n >= 0.8 ? "#00ba7c" : n >= 0.6 ? "#e7e9ea" : DIM; }
 
-function Card({ s, focused, onFocus, pick, setPick, editing, setEditing, dismissing, setDismissing, act, postOnX }: any) {
+function Card({ s, i, focused, onFocus, pick, setPick, editing, setEditing, dismissing, setDismissing, act, postOnX }: any) {
   const drafts: string[] = parse(s.drafts, []);
   const thread: string[] = parse(s.thread, []);
   const url = s.tweet_url || (s.tweet_id ? `https://x.com/i/web/status/${s.tweet_id}` : null);
@@ -272,30 +278,31 @@ function Card({ s, focused, onFocus, pick, setPick, editing, setEditing, dismiss
 
   return (
     <div ref={ref} onClick={onFocus}
-         style={{ borderBottom: `1px solid ${LINE}`, boxShadow: focused ? `inset 3px 0 0 ${X_BLUE}` : undefined }}
-         className={cn("transition-colors", focused ? "bg-[#080808]" : "hover:bg-[#050505]")}>
+         style={{ borderBottom: `1px solid var(--line-soft)`, boxShadow: focused ? "inset 2px 0 0 var(--muted)" : undefined, animationDelay: `${Math.min(i, 6) * 28}ms` }}
+         className={cn("rise transition-colors", focused ? "bg-[var(--surface)]" : "hover:bg-[rgba(255,255,255,.014)]")}>
       {/* Chorus chrome — an instrument, deliberately not X */}
-      <div className="flex items-center gap-2 px-4 pt-2 text-[13px] font-mono" style={{ color: DIM }}>
-        <span style={{ color: scoreColor(s.score) }}>{s.score.toFixed(2)}</span>
-        <span>·</span><span style={{ color: X_BLUE }}>{s.target || "reply"}</span>
+      <div className="mono flex items-center gap-2 px-4 pt-3 text-[11px] tracking-tight" style={{ color: "var(--faint)" }}>
+        <span className="tabular-nums" style={{ color: scoreColor(s.score) }}>{s.score.toFixed(2)}</span>
+        <span>·</span>
+        <span className="uppercase tracking-[0.08em]" style={{ color: "var(--muted)" }}>{s.target || "reply"}</span>
         {s.pillar && <><span>·</span><span>{s.pillar}</span></>}
         {s.author_tier && <><span>·</span><span>tier {s.author_tier}</span></>}
         {url && <a href={url} target="_blank" className="ml-auto hover:underline" style={{ color: DIM }}>on X (o)</a>}
       </div>
       {/* the angle is WHY this was picked — the fastest "is it worth it?" signal */}
       {s.angle && (
-        <p className="px-4 pt-1 text-[13px]" style={{ color: "#e7e9ea" }}>
-          <span style={{ color: X_BLUE }}>▸ </span>{s.angle}
+        <p className="px-4 pt-1.5 pb-0.5 text-[13.5px] leading-[19px]" style={{ color: "var(--muted)" }}>
+          <span style={{ color: "var(--faint)" }}>— </span>{s.angle}
         </p>
       )}
 
       {isPost ? (
         // An original post has no parent tweet. Show WHERE the idea came from, plainly.
         <a href={url || "#"} target="_blank" rel="noreferrer"
-           className="mx-4 my-2 flex items-start gap-2 rounded-lg px-3 py-2 text-[13px] no-underline hover:bg-[#101010]"
-           style={{ border: `1px dashed ${LINE}` }}>
-          <span className="font-mono font-bold shrink-0" style={{ color: DIM }}>
-            {String(s.author_handle || "idea").toUpperCase()}
+           className="mx-4 my-2 flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-[13px] no-underline transition-colors hover:bg-[var(--surface-2)]"
+           style={{ border: `1px solid var(--line-soft)`, background: "var(--surface)" }}>
+          <span className="mono shrink-0 text-[10px] uppercase tracking-[0.1em] pt-0.5" style={{ color: "var(--faint)" }}>
+            {String(s.author_handle || "idea")}
           </span>
           <span className="min-w-0" style={{ color: "#e7e9ea" }}>
             {String(s.tweet_text || "").replace(/^\[[^\]]+\]\s*/, "")}
@@ -343,8 +350,9 @@ function Card({ s, focused, onFocus, pick, setPick, editing, setEditing, dismiss
                 <div className="px-4 pb-2">
                   {drafts.map((d, i) => i === pick ? null : (
                     <button key={i} onClick={() => setPick(i)}
-                      className="block w-full text-left text-[13px] py-1 truncate hover:underline" style={{ color: DIM }}>
-                      <span className="font-mono">{i + 1}·</span> {d.slice(0, 80)}
+                      className="block w-full text-left text-[12.5px] py-1.5 pl-[52px] pr-2 truncate transition-colors hover:text-[var(--text)]"
+                      style={{ color: "var(--faint)" }}>
+                      <span className="mono mr-1.5 opacity-60">{i + 1}</span>{d.slice(0, 80)}
                     </button>
                   ))}
                 </div>
@@ -367,17 +375,18 @@ function Card({ s, focused, onFocus, pick, setPick, editing, setEditing, dismiss
           <button onClick={() => setDismissing(false)} className="text-[13px]" style={{ color: DIM }}>cancel</button>
         </div>
       ) : !editing && (
-        <div className="px-4 py-3 flex flex-wrap gap-2" style={{ borderTop: `1px solid ${LINE}` }}>
-          <button onClick={() => postOnX(s)} className="rounded-full px-4 py-1.5 text-[14px] font-bold"
-                  style={{ background: X_BLUE, color: "#fff" }}>
+        <div className="px-4 py-3.5 flex flex-wrap gap-2" style={{ borderTop: `1px solid ${LINE}` }}>
+          <button onClick={() => postOnX(s)}
+                  className="rounded-full px-4 py-1.5 text-[13.5px] font-semibold transition-transform active:scale-[.97]"
+                  style={{ background: "var(--x-blue)", color: "#fff" }}>
             {isRT ? "Retweet on X" : isPost ? "Post this" : "Post on X"} <span className="opacity-60">(p)</span>
           </button>
-          {!isRT && <button onClick={() => setEditing(true)} className="rounded-full px-4 py-1.5 text-[14px] font-bold hover:bg-[#181818]"
-                    style={{ border: `1px solid #536471`, color: "#e7e9ea" }}>Edit (e)</button>}
-          <button onClick={() => act(s, "snoozed")} className="rounded-full px-4 py-1.5 text-[14px] hover:bg-[#181818]"
-                  style={{ border: `1px solid #536471`, color: DIM }}>Snooze (s)</button>
-          <button onClick={() => setDismissing(true)} className="rounded-full px-4 py-1.5 text-[14px]"
-                  style={{ border: "1px solid #67070f", color: "#f4212e" }}>Dismiss (x)</button>
+          {!isRT && <button onClick={() => setEditing(true)} className="rounded-full px-4 py-1.5 text-[13.5px] font-medium transition-colors hover:bg-[var(--surface-2)]"
+                    style={{ border: `1px solid var(--line)`, color: "var(--text)" }}>Edit (e)</button>}
+          <button onClick={() => act(s, "snoozed")} className="rounded-full px-4 py-1.5 text-[13.5px] transition-colors hover:bg-[var(--surface-2)]"
+                  style={{ border: `1px solid var(--line)`, color: "var(--muted)" }}>Snooze (s)</button>
+          <button onClick={() => setDismissing(true)} className="rounded-full px-4 py-1.5 text-[13.5px] transition-colors hover:bg-[rgba(244,33,46,.08)]"
+                  style={{ border: "1px solid var(--line)", color: "var(--danger)" }}>Dismiss (x)</button>
         </div>
       )}
     </div>
@@ -410,10 +419,12 @@ function Empty({ beat, onRefresh }: any) {
 
 function Stat({ label, value, sub, danger }: any) {
   return (
-    <div className="py-2" style={{ borderTop: `1px solid ${LINE}` }}>
-      <div className="text-[13px]" style={{ color: DIM }}>{label}</div>
-      <div className="text-[15px] font-bold" style={{ color: danger ? "#f4212e" : "#e7e9ea" }}>{value}</div>
-      {sub && <div className="text-[12px] font-mono" style={{ color: DIM }}>{sub}</div>}
+    <div className="flex items-baseline justify-between gap-3 py-2.5" style={{ borderTop: `1px solid var(--line-soft)` }}>
+      <div className="text-[12.5px]" style={{ color: "var(--faint)" }}>{label}</div>
+      <div className="text-right">
+        <div className="mono text-[13px] tabular-nums" style={{ color: danger ? "var(--danger)" : "var(--text)" }}>{value}</div>
+        {sub && <div className="mono text-[10.5px]" style={{ color: "var(--faint)" }}>{sub}</div>}
+      </div>
     </div>
   );
 }
@@ -424,12 +435,13 @@ function Help() {
              ["z", "undo last action"], ["?", "this help"]];
   return (
     <>
-      <DialogTitle className="text-[20px] font-black mb-3">Shortcuts</DialogTitle>
+      <DialogTitle className="text-[12px] font-medium uppercase tracking-[0.14em] mb-4" style={{ color: "var(--faint)" }}>Shortcuts</DialogTitle>
       <div>
         {K.map(([k, d]) => (
-          <div key={k} className="flex justify-between py-1 text-[14px]">
-            <span className="font-mono" style={{ color: X_BLUE }}>{k}</span>
-            <span style={{ color: DIM }}>{d}</span>
+          <div key={k} className="flex items-center justify-between py-1.5 text-[13px]">
+            <span className="mono rounded-md px-1.5 py-0.5 text-[11px]"
+                  style={{ background: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--text)" }}>{k}</span>
+            <span style={{ color: "var(--muted)" }}>{d}</span>
           </div>
         ))}
       </div>

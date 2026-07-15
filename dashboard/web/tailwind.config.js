@@ -1,7 +1,17 @@
 export default {
   darkMode: ["class"],
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
-  theme: { extend: { colors: {
+  theme: { extend: {
+    fontFamily: {
+      sans: ['"Instrument Sans"', "ui-sans-serif", "system-ui", "sans-serif"],
+      mono: ['"JetBrains Mono"', "ui-monospace", "monospace"],
+    },
+    colors: {
+    bg: "var(--bg)", surface: "var(--surface)", "surface-2": "var(--surface-2)",
+    line: "var(--line)", "line-soft": "var(--line-soft)",
+    text: "var(--text)", muted: "var(--muted)", faint: "var(--faint)",
+    "x-blue": "var(--x-blue)", accent: "var(--accent)",
+    danger: "var(--danger)", warn: "var(--warn)", good: "var(--good)",
     border:"hsl(var(--border))", input:"hsl(var(--input))", ring:"hsl(var(--ring))",
     background:"hsl(var(--background))", foreground:"hsl(var(--foreground))",
     primary:{DEFAULT:"hsl(var(--primary))",foreground:"hsl(var(--primary-foreground))"},
