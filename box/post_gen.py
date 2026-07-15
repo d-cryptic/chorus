@@ -416,7 +416,7 @@ def analytics_context(base, token):
     keep = []
     for r in rows:
         kind = r.get("kind") or ""
-        if kind not in ("winning_shape", "winning_format", "dominant_topic"):
+        if kind not in ("winning_shape", "winning_format", "dominant_topic", "geo_visibility"):
             continue
         pay = r.get("payload")
         import json as _j
