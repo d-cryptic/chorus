@@ -194,3 +194,14 @@ test("the Posted tab admits which drafts actually reached X", async ({ page }) =
   await expect(page.getByText("✓ live", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("never sent", { exact: true })).toBeVisible();
 });
+
+test("insights render the verdicts and hide the ones with no data", async ({ page }) => {
+  await page.goto("/");
+  await page.getByRole("tab", { name: /insights/i }).click();
+  // The engine only started producing real claims once outcome rows attached — before that
+  // every outcome was an orphan keyed to a feedback id, so `verified` was 0 and every
+  // engagement-based insight was insufficient_data forever.
+  await expect(page.getByText(/What's working/)).toBeVisible();
+  // an insufficient_data insight must NOT be rendered as a claim
+  await expect(page.getByText(/insufficient_data/)).toHaveCount(0);
+});
