@@ -1,7 +1,7 @@
 # 2026-07-15 — Claude drafting via subscription + a full audit sweep
 
-**Status:** 18 commits shipped + 2 box-only fixes, all deployed and green. Worker + UI live.
-Claude drafting BUILT and proven end-to-end; ONE user step remains (OAuth). 1,095 followers.
+**Status:** 19 commits + 2 box-only fixes, deployed. FULL VALIDATION green: box 408, laptop 531,
+e2e 23, ZERO box/laptop drift. Claude drafting BUILT; ONE user step remains (OAuth). 1,095 followers.
 
 ## Goal
 
@@ -67,3 +67,6 @@ until a fuller mine.
 - `npm run build` (vite) does NOT typecheck — it shipped an undefined name as "✓ built".
   Now gated: `tsc --noEmit && vite build`, plus a predeploy check that refuses "REPLACE" vars.
 - candidate_source.py / discover graph files are git-ignored (provider details) — box-only.
+- Piecemeal base64 deploys SILENTLY DESYNC the box: this shift left 6 files stale (tests +
+  hermes_backend), so the box ran different code than committed. End-of-shift validation
+  caught it. ALWAYS finish with `md5sum *.py` box-vs-laptop + a full on-box suite run.
