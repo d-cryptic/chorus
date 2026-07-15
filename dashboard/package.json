@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "node ./predeploy-check.mjs && wrangler deploy",
     "db:init": "wrangler d1 execute chorus --remote --file=./schema.sql",
     "db:seed": "wrangler d1 execute chorus --remote --file=./seed.sql"
   },

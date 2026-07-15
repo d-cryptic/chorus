@@ -83,8 +83,14 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
         // suggestions exist on X. Without this the Posted tab reports 10 and means 4.
         `SELECT s.*, (o.suggestion_id IS NOT NULL) AS verified, o.likes AS o_likes, o.replies AS o_replies
            FROM suggestion s LEFT JOIN outcome o ON o.suggestion_id = s.id
-           WHERE (s.status = ?1 OR (s.status='snoozed' AND s.snooze_until IS NOT NULL AND s.snooze_until <= ?2))
-             AND (s.expires_at IS NULL OR s.expires_at > ?2)
+           WHERE (s.status = ?1 OR (?1 = 'queued' AND s.status='snoozed' AND s.snooze_until IS NOT NULL AND s.snooze_until <= ?2))
+             -- expires_at means "the reply window closed", which is only meaningful for the
+             -- QUEUED lane. It used to apply to every status: a posted row keeps its 48h
+             -- expires_at forever (the sweep only re-statuses 'queued'), so once that passed,
+             -- the Posted tab returned [] while the badge -- an unfiltered GROUP BY status --
+             -- still said 12. Badge says N, list says 0, "Queue clear". Nothing had fired yet
+             -- only because the oldest posted row expires 2026-07-16 17:16Z.
+             AND (?1 != 'queued' OR s.expires_at IS NULL OR s.expires_at > ?2)
              AND (?4 IS NULL OR s.target = ?4)
            ORDER BY s.score DESC LIMIT ?3`
       ).bind(status, now, limit, tgt).all();

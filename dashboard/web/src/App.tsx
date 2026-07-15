@@ -19,7 +19,17 @@ type Sug = {
   verified?: number;   // outcome_track FOUND it on X — 'posted' alone only means clicked
 };
 
-const api = (p: string) => fetch(p, { credentials: "same-origin" }).then((r) => r.json());
+const api = async (p: string) => {
+  // Same lesson as post() below, which learned it first: fetch() does NOT reject on 4xx/5xx.
+  // The Worker answers with a JSON BODY on errors ({error:"forbidden"} 403 when your Access
+  // session expires, {error:"internal error"} 500 when D1 throws), so .json() resolved,
+  // `sg.suggestions` came back undefined, setItems([]) ran, and the dashboard rendered
+  // "Queue clear · last cycle ran 5m ago". It told you there was nothing to post when it
+  // simply could not see. An empty queue and a broken queue must never look identical.
+  const r = await fetch(p, { credentials: "same-origin" });
+  if (!r.ok) throw new Error(`${p} -> ${r.status}`);
+  return r.json();
+};
 const parse = (x: any, f: any) => { try { return typeof x === "string" ? JSON.parse(x) : x ?? f; } catch { return f; } };
 const post = async (p: string, body: any) => {
   // fetch() does NOT reject on 4xx/5xx. Without this check a failed action still
@@ -45,6 +55,7 @@ export default function App() {
   const [alerts, setAlerts] = useState<any[]>([]);
   const [cfg, setCfg] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [err, setErr] = useState<string | null>(null);   // null = healthy; a string = we are BLIND
   const [cursor, setCursor] = useState(0);          // j/k focus
   const [pick, setPick] = useState<Record<string, number>>({});  // per-suggestion draft index
   const [editing, setEditing] = useState<string | null>(null);
@@ -68,12 +79,24 @@ export default function App() {
       ]);
       setInsights({ ...rv, ...ins }); setLoading(false); return;
     }
-    const [sg, sp, st, cf] = await Promise.all([
-      api(`/api/suggestions?status=${status === "posts" ? "queued&target=post" : status}`),
-      api(`/api/spend`).catch(() => ({ total: 0 })),
-      api(`/api/status`).catch(() => ({})),
-      api(`/api/settings`).catch(() => ({ settings: null })),
-    ]);
+    let sg: any, sp: any, st: any, cf: any;
+    try {
+      // The side panels may degrade quietly — a missing spend figure is cosmetic. The QUEUE
+      // may not: if we cannot read it we must say so, not render an empty one. This call was
+      // also the only one with no .catch(), so a rejection skipped setLoading(false) below
+      // and the page hung on "Loading..." forever with an unhandled rejection in the console.
+      [sg, sp, st, cf] = await Promise.all([
+        api(`/api/suggestions?status=${status === "posts" ? "queued&target=post" : status}`),
+        api(`/api/spend`).catch(() => ({ total: 0 })),
+        api(`/api/status`).catch(() => ({})),
+        api(`/api/settings`).catch(() => ({ settings: null })),
+      ]);
+      setErr(null);
+    } catch (e: any) {
+      setErr(String(e?.message || e));
+      setLoading(false);
+      return;
+    }
     setItems(sg.suggestions || []); setCounts(sg.counts || {});
     setSpend(Number(sp.total) || 0); setCfg(cf.settings || null);
     setAlerts(st.alerts || []); setCredits(st.lastRun?.credits ?? null); setBurn(st.creditsPerDay ?? null); setProvider(st.provider ?? null);
@@ -124,7 +147,11 @@ export default function App() {
   };
 
   const act = async (s: Sug, action: string, extra: any = {}) => {
-    const idx = pick[s.id] ?? 0;
+    // MUST match selected()'s default. It was `?? 0` while selected() uses `?? heroOffset(s)`,
+    // so on the common path (you never press 1/2/3) we POSTED the hero draft and RECORDED
+    // index 0. Measured on the live queue: 5 of 10 suggestions would have mis-recorded, and
+    // the learning loop then attributes every outcome to a draft you never saw.
+    const idx = pick[s.id] ?? heroOffset(s);
     const at = items.findIndex((i) => i.id === s.id);
     setItems((x) => x.filter((i) => i.id !== s.id));           // optimistic
     setCursor((c) => Math.min(c, Math.max(0, items.length - 2)));
@@ -163,6 +190,13 @@ export default function App() {
     // a post is standalone: never attach in_reply_to, even if a source ref exists
     `https://x.com/intent/post?text=${encodeURIComponent(text)}` +
     (s.target !== "post" && s.tweet_id ? `&in_reply_to=${encodeURIComponent(s.tweet_id)}` : "");
+  /** The edit path's twin of postOnX: ONE action, and the text you actually edited.
+   *  It cannot go through postOnX -- that fires act(s,"posted") itself (two rows per edit)
+   *  and re-indexes drafts by pick[s.id] (blank composer if you had pressed 2 or 3). */
+  const postEdited = (s: Sug, text: string) => {
+    window.open(intent(s, text), "_blank");
+    act(s, "posted_edited", { final_text: text });
+  };
   const postOnX = (s: Sug) => {
     const t = selected(s);
     window.open(s.target === "retweet" && s.tweet_id
@@ -342,6 +376,7 @@ export default function App() {
 
         {loading ? <p className="py-16 text-center text-[15px]" style={{ color: DIM }}>Loading…</p>
           : status === "insights" ? <Insights data={insights} />
+          : err ? <Failed msg={err} onRetry={load} />
           : items.length === 0 && !blocked ? <Empty beat={beat} onRefresh={load} />
           : items.map((s, i) => (
               <Card key={s.id} i={i} s={s} focused={i === cursor} onFocus={() => setCursor(i)}
@@ -349,7 +384,7 @@ export default function App() {
                     pick={pick[s.id] ?? heroOffset(s)} setPick={(n: number) => setPick((p) => ({ ...p, [s.id]: n }))}
                     editing={editing === s.id} setEditing={(v: boolean) => setEditing(v ? s.id : null)}
                     dismissing={dismissing === s.id} setDismissing={(v: boolean) => setDismissing(v ? s.id : null)}
-                    act={act} postOnX={postOnX} />
+                    act={act} postOnX={postOnX} postEdited={postEdited} />
             ))}
         <div className="h-24" />
       </main>
@@ -385,7 +420,7 @@ export default function App() {
 
 function scoreColor(n: number) { return n >= 0.8 ? "var(--primary)" : n >= 0.6 ? "var(--foreground)" : DIM; }
 
-function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditing, dismissing, setDismissing, act, postOnX }: any) {
+function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditing, dismissing, setDismissing, act, postOnX, postEdited }: any) {
   const drafts: string[] = parse(s.drafts, []);
   const thread: string[] = parse(s.thread, []);
   const longform: string = s.longform || "";   // Premium Plus single post; depth without separable beats
@@ -507,8 +542,18 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
                     That is precisely the "marked posted, never published" row that wrecked
                     today's taste analysis. Edit now posts, like the button next to it.
                     X_BLUE is correct here: this IS the post-on-X action. */}
-                <button onClick={() => { postOnX({ ...s, drafts: JSON.stringify([text]) } as any);
-                                         act(s, "posted_edited", { final_text: text }); setEditing(false); }}
+                {/* Open the intent DIRECTLY. Routing through postOnX() had two defects:
+                    (a) postOnX fires act(s,"posted") itself, so an edit wrote TWO feedback
+                        rows -- a phantom un-edited "posted" (final_text NULL) plus the real
+                        posted_edited. /api/review computes SUM(posted)/COUNT(*), so one edit
+                        + one dismiss reported 67% acceptance instead of 50%, and the taste
+                        engine learned from a post that never existed.
+                    (b) it passed {...s, drafts:[text]} to selected(), which indexes with
+                        pick[s.id] -- the spread keeps the id, so if you had pressed 2 or 3
+                        the index survived into a length-1 array -> undefined -> "" -> X
+                        opened BLANK while Chorus recorded posted_edited with your text.
+                    Edit is hidden for retweets, so intent() is always the right target. */}
+                <button onClick={() => { postEdited(s, text); setEditing(false); }}
                   className="ml-auto rounded-full px-4 py-1.5 text-[14px] font-bold"
                   style={{ background: X_BLUE, color: "#fff" }}>Post edit</button>
                 <button onClick={() => setEditing(false)}
@@ -621,6 +666,27 @@ function Blocked({ tone, title, cta, act, href }: any) {
       {href ? <a href={href} target="_blank" className="text-[14px] underline" style={{ color: "var(--primary)" }}>{cta}</a>
             : <button onClick={act} className="mt-2 rounded-full px-4 py-1.5 text-[14px] font-bold"
                       style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}>{cta}</button>}
+    </div>
+  );
+}
+
+function Failed({ msg, onRetry }: any) {
+  // Deliberately NOT the Empty state. "Queue clear" and "I cannot see the queue" are opposite
+  // facts and looked identical for the dashboard's whole life. A 403 here almost always means
+  // the Cloudflare Access session expired — say that, because the fix is one reload.
+  const forbidden = / -> 40[13]$/.test(msg || "");
+  return (
+    <div className="py-20 text-center">
+      <div className="text-[28px] mb-2">⚠</div>
+      <p className="text-[15px] font-bold">Can&rsquo;t read the queue</p>
+      <p className="text-[13px] font-mono mt-1" style={{ color: DIM }}>
+        {forbidden ? "your Access session expired - reload to sign in again" : msg}
+      </p>
+      <p className="text-[12px] font-mono mt-1" style={{ color: DIM }}>
+        this is NOT an empty queue - suggestions may be waiting
+      </p>
+      <button onClick={onRetry} className="mt-3 rounded-full px-4 py-1.5 text-[14px] font-bold"
+              style={{ border: `1px solid var(--border)`, color: "var(--foreground)" }}>Retry</button>
     </div>
   );
 }

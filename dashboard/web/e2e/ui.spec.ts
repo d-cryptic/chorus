@@ -306,3 +306,44 @@ test("you can read the alternative drafts without clicking them", async ({ page 
   expect(long).toBeTruthy();                       // a genuinely long alternative exists
   expect(long).toContain("offline for a week.");   // ...and its END is visible, not clipped
 });
+
+/** A BROKEN queue and an EMPTY queue must never look the same.
+ *
+ *  api() was `fetch(p).then(r => r.json())` with no r.ok check, and the worker answers errors
+ *  with a JSON BODY ({error:"forbidden"} 403 when the Access session expires). So .json()
+ *  resolved, sg.suggestions was undefined, setItems([]) ran, and the dashboard rendered
+ *  "Queue clear · last cycle ran 5m ago" — telling you there was nothing to post while it was
+ *  blind. post() had learned this exact lesson ("a failed action still removed the card and
+ *  toasted success"); api() never got the fix.
+ */
+test("a 403 says we are blind, NOT 'Queue clear'", async ({ page }) => {
+  await page.route("**/api/suggestions*", (r) =>
+    r.fulfill({ status: 403, contentType: "application/json",
+                body: JSON.stringify({ error: "forbidden" }) }));   // exactly what the worker sends
+  await page.goto("/");
+  await expect(page.getByText(/Can.t read the queue/)).toBeVisible();
+  await expect(page.getByText(/Access session expired/)).toBeVisible();
+  await expect(page.getByText("Queue clear")).toHaveCount(0);       // the lie
+  await expect(page.getByText(/suggestions may be waiting/)).toBeVisible();
+  await page.screenshot({ path: "e2e/shot-blind.png", fullPage: false });
+});
+
+test("a 500 surfaces the failure instead of an empty queue", async ({ page }) => {
+  await page.route("**/api/suggestions*", (r) =>
+    r.fulfill({ status: 500, contentType: "application/json",
+                body: JSON.stringify({ error: "internal error" }) }));
+  await page.goto("/");
+  await expect(page.getByText(/Can.t read the queue/)).toBeVisible();
+  await expect(page.getByText("Queue clear")).toHaveCount(0);
+});
+
+/** The suggestions call was the only one in load() with no .catch(), and load() had no
+ *  try/catch, so a non-JSON body (a Cloudflare edge 502, or an Access HTML login redirect)
+ *  rejected Promise.all -> setLoading(false) never ran -> "Loading…" forever. */
+test("a non-JSON body does not hang the page on Loading", async ({ page }) => {
+  await page.route("**/api/suggestions*", (r) =>
+    r.fulfill({ status: 502, contentType: "text/html", body: "<html>edge error</html>" }));
+  await page.goto("/");
+  await expect(page.getByText(/Can.t read the queue/)).toBeVisible({ timeout: 5000 });
+  await expect(page.getByText("Loading…")).toHaveCount(0);
+});

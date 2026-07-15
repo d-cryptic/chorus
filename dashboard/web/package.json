@@ -4,8 +4,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
-    "prebuild": "rm -rf ../public/assets"
+    "build": "tsc --noEmit && vite build",
+    "prebuild": "rm -rf ../public/assets",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.19",
