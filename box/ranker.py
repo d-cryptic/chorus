@@ -818,8 +818,14 @@ def run(args):
                         s2 = judge_draft(c, drafts[0], voice, model=model, link=link,
                                          api_key=api_key, tracker=tracker,
                                          examples=examples)
-                        if s2:
-                            scores = s2  # re-judge the regenerated draft
+                        # Route the REGENERATED draft on ITS judge result, never the old
+                        # draft's. `if s2: scores = s2` kept draft[0]'s FAILING scores when the
+                        # re-judge came back empty, so the fresh draft was routed on the very
+                        # scores that triggered the regeneration -> wrongly DROPPED. An empty s2
+                        # is a judge FAILURE, which route_post treats as distinct=None -> a safe
+                        # REPLY ("a judge failure must never destroy a draft"). So always adopt
+                        # s2, even when empty.
+                        scores = s2 or {}
                 except B.BudgetError:
                     pass  # keep the demoted draft rather than lose the work
 
