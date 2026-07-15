@@ -241,6 +241,42 @@ def judge_draft(c, draft, voice, *, model, api_key, tracker=None, examples=()):
         return {}  # unknown -> pass
 
 
+def _sm_hits(out):
+    """Normalise a /v3/search response into [(text, score, semantic)].
+
+    TWO backends speak this API and they do NOT agree on shape or score scale:
+      * box/memory_service.py (the local shim) -> {"results":[{"content", "score"}]}
+        score is BM25: unbounded, ~0 to ~10+.
+      * upstream Supermemory (self-hosted :6767) -> {"results":[{"chunks":[{"content"}], "score"}]}
+        NO top-level "content"; score is cosine, 0..1.
+    Reading r["content"] against upstream silently yields "" for every hit, and every
+    caller here is wrapped in `except: pass` -- so the failure is invisible. Hence this.
+    """
+    hits = []
+    for r in (out.get("results") or []):
+        txt = r.get("content")
+        semantic = False
+        if not txt:
+            chunks = r.get("chunks") or []
+            txt = "\n".join(c.get("content", "") for c in chunks if c.get("content"))
+            semantic = bool(chunks)
+        hits.append((txt or "", float(r.get("score") or 0), semantic))
+    return hits
+
+
+def _sm_texts(out, cap=300):
+    return [t[:cap] for t, _s, _sem in _sm_hits(out) if t]
+
+
+# Upstream Supermemory 400s on an empty query ("Search query cannot be empty");
+# the shim treated "" as "most recent". Give upstream something to match on.
+_SM_ANY = "*"
+
+
+def _sm_q(q):
+    return (q or "").strip() or _SM_ANY
+
+
 def get_voice(fallback):
     """The voice the drafter should imitate.
 
@@ -254,8 +290,7 @@ def get_voice(fallback):
     try:
         out = _req(f"{base}/v3/search", "POST", key or None,
                    {"q": "voice:", "containerTags": ["chorus:self"]}, timeout=8)
-        for r in (out.get("results") or []):
-            content = r.get("content", "")
+        for content, _sc, _sem in _sm_hits(out):
             if content.lower().startswith("voice"):
                 return content[:900]
     except Exception:
@@ -272,10 +307,10 @@ def niche_context():
         chunks = []
         for tag in ("chorus:niche:replies", "chorus:niche"):  # comments first: we write replies
             out = _req(f"{base}/v3/search", "POST", key or None,
-                       {"q": "", "containerTags": [tag]}, timeout=8)
-            r = (out.get("results") or [])
+                       {"q": _sm_q(""), "containerTags": [tag]}, timeout=8)
+            r = _sm_texts(out, 600)
             if r:
-                chunks.append(r[0].get("content", "")[:600])
+                chunks.append(r[0])
         return "\n".join(chunks)
     except Exception:
         return ""
@@ -298,16 +333,16 @@ def voice_context(topic, *, limit=3):
     def _search(q):
         try:
             out = _req(f"{base}/v3/search", "POST", key or None,
-                       {"q": q, "containerTags": ["chorus:self"]}, timeout=8)
-            return [r.get("content", "")[:300] for r in (out.get("results") or [])]
+                       {"q": _sm_q(q), "containerTags": ["chorus:self"]}, timeout=8)
+            return _sm_texts(out)
         except Exception:
             return []
 
     def _search_tag(q, tag):
         try:
             out = _req(f"{base}/v3/search", "POST", key or None,
-                       {"q": q, "containerTags": [tag], "limit": limit}, timeout=8)
-            return [r.get("content", "")[:300] for r in (out.get("results") or [])]
+                       {"q": _sm_q(q), "containerTags": [tag], "limit": limit}, timeout=8)
+            return _sm_texts(out)
         except Exception:
             return []
 
@@ -337,19 +372,25 @@ def already_said(text, *, threshold=None):
     env-tunable via CHORUS_REPEAT_TAU, and every NEAR-MISS is logged too, so the value
     can be re-derived from real data rather than vibes.
     """
-    if threshold is None:
-        threshold = float(os.environ.get("CHORUS_REPEAT_TAU", "1.0"))
     base = os.environ.get("SUPERMEMORY_BASE_URL", "http://localhost:8000").rstrip("/")
     key = os.environ.get("SUPERMEMORY_API_KEY", "")
     try:
         out = _req(f"{base}/v3/search", "POST", key or None,
-                   {"q": text[:280], "containerTags": ["chorus:posts"], "limit": 1}, timeout=8)
-        r = (out.get("results") or [])
-        if not r:
+                   {"q": _sm_q(text[:280]), "containerTags": ["chorus:posts"], "limit": 1}, timeout=8)
+        hits = _sm_hits(out)
+        if not hits:
             return None
-        sc = float(r[0].get("score") or 0)
+        content, sc, semantic = hits[0]
+        # The two backends score on DIFFERENT SCALES, so one threshold cannot serve both:
+        #   shim  -> BM25, unbounded (tau 1.0 is a real bar)
+        #   upstream Supermemory -> cosine, 0..1 (tau 1.0 is UNREACHABLE -> guard silently
+        #   disabled -> Chorus repeats itself forever with no error). Pick per backend.
+        if threshold is None:
+            threshold = float(os.environ.get(
+                "CHORUS_REPEAT_TAU_COSINE" if semantic else "CHORUS_REPEAT_TAU",
+                "0.88" if semantic else "1.0"))
         if sc >= threshold:
-            return r[0].get("content", "")[:120], sc
+            return content[:120], sc
         if sc >= threshold * 0.7:   # near-miss: surface it so the tau can be tuned
             print(f"  (repeat near-miss {sc:.2f} < tau {threshold}: {r[0].get('content','')[:44]!r})")
     except Exception:

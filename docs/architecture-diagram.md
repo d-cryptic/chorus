@@ -68,8 +68,23 @@ flowchart TB
   fast_lane / post_gen) still runs as plain Python under cron — it does not yet route
   through Hermes. "Hosted on the box alongside Chorus" is true; "Chorus runs on Hermes"
   is not (yet).
-- **Supermemory — ❌ STILL FALSE.** The box runs `chorus-memory`, a stdlib+SQLite service
-  that merely *speaks* Supermemory's `/v3/documents` API. Real Supermemory is either the
-  hosted API (`https://api.supermemory.ai/v3/`, needs a key) or their self-host quickstart.
-  Either makes the claim true via one env var — `SUPERMEMORY_BASE_URL` — because the
-  service was built API-compatible for exactly this swap.
+- **Supermemory — ✅ TRUE as of 2026-07-15.** Real upstream Supermemory (`supermemory-server`
+  0.0.5) is self-hosted on the box: systemd unit `supermemory`, `127.0.0.1:6767`, encrypted
+  local storage, **local** embeddings (`Xenova/bge-base-en-v1.5`, 768d — no embedding API
+  spend), graph memory agent via OpenRouter. `SUPERMEMORY_BASE_URL` now points at it and all
+  23 documents were migrated off the `chorus-memory` shim with `customId` idempotency.
+  Verified: voice/niche/few-shot reads all come from it, and the repetition guard now catches
+  *paraphrases* (0.994) that BM25 could not.
+
+  **The swap was NOT the one-env-var change I claimed** — three silent breakages were found
+  and fixed first (see `box/test_sm_compat.py`, 14 tests):
+  1. upstream returns `chunks[].content`, **no top-level `content`** — every reader got `""`;
+  2. upstream **400s on an empty query**, which `niche_context()` sent;
+  3. upstream scores **cosine 0..1** vs the shim's unbounded BM25 — `CHORUS_REPEAT_TAU=1.0`
+     became unreachable, silently disabling the repetition guard.
+  All three sat inside `except: pass`, so nothing would have logged an error. Calibrated on
+  real data: exact repeat 1.000, paraphrase 0.994, unrelated 0.558 -> `CHORUS_REPEAT_TAU_COSINE`
+  defaults to 0.88.
+
+  The `chorus-memory` shim still runs on `:8000` as a fallback and its SQLite is intact; both
+  shapes stay supported by the adapter, so `SUPERMEMORY_BASE_URL` can be flipped back at any time.
