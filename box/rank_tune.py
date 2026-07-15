@@ -14,6 +14,56 @@ def _req(url, method="GET", token=None, body=None):
     if token: r.add_header("authorization", "Bearer " + token)
     with urllib.request.urlopen(r, timeout=25) as resp: return json.loads(resp.read() or "{}")
 
+def _numeric(fac):
+    """Only numeric factors are tunable weights. post_gen writes {"source":"session"} and
+    fast_lane writes provenance like {"fast_lane":1,"age_min":11} — a bare float() over
+    every factor crashed the whole tuner on the first string. Skip, never crash.
+    """
+    out = {}
+    for k, v in (fac or {}).items():
+        if isinstance(v, bool):
+            continue
+        if isinstance(v, (int, float)):
+            out[k] = float(v)
+    return out
+
+
+def follower_attribution(base, tok):
+    """ts -> followers gained per reply posted in that snapshot window.
+
+    follower_track snapshots hourly; feedback rows carry a ts. A reply is credited an equal
+    share of the delta over the window it landed in.
+
+    HONEST: one account, no control group, and several replies can share a window — so this
+    is correlational, not causal, and noisy at low volume. Still strictly better than
+    optimising likes, which are only loosely coupled to follows, and it self-corrects as
+    volume grows because noise averages out while a real signal does not.
+    """
+    try:
+        hist = (_req(f"{base}/api/box/followers", token=tok).get("history") or [])  # newest first
+    except Exception:
+        return lambda ts: None
+    if len(hist) < 2:
+        return lambda ts: None
+    windows = [(prev["ts"], cur["ts"], cur["count"] - prev["count"])
+               for cur, prev in zip(hist, hist[1:])]
+    try:
+        fb = _req(f"{base}/api/box/feedback?since=0", token=tok).get("feedback", [])
+    except Exception:
+        fb = []
+    posted = [x for x in fb if (x.get("action") or "").startswith("posted")]
+
+    def per(ts):
+        if not ts:
+            return None
+        for lo, hi, delta in windows:
+            if lo < ts <= hi:
+                n = sum(1 for x in posted if lo < (x.get("ts") or 0) <= hi) or 1
+                return delta / n
+        return None
+    return per
+
+
 def main():
     base = os.environ.get("INGEST_URL", "http://localhost:8787").rstrip("/"); tok = os.environ.get("INGEST_TOKEN", "")
     fol_for = follower_attribution(base, tok)
@@ -37,10 +87,10 @@ def main():
             else:                                # no snapshot covers this reply yet
                 w = 1.0 + ((f.get("likes") or 0) + 2 * (f.get("replies") or 0)) / 10
             nP += w
-            for k, v in fac.items(): pos[k] = pos.get(k, 0) + float(v) * w
+            for k, v in _numeric(fac).items(): pos[k] = pos.get(k, 0) + v * w
         else:
             nN += 1
-            for k, v in fac.items(): neg[k] = neg.get(k, 0) + float(v)
+            for k, v in _numeric(fac).items(): neg[k] = neg.get(k, 0) + v
     if not nP or not nN:
         print("need both accepted and dismissed feedback"); return
     tuned = 0
