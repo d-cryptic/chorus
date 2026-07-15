@@ -35,9 +35,49 @@ def clock_overlap(tweets, tz_offset_h=None):
     return round(hits / len(tweets), 3)
 
 
+
+PILLAR_RE = None
+
+
+def graph_candidates(d, min_f, max_f):
+    """Seed from the user's OWN graph. Free: followings.json/followers.json are already local.
+
+    Why this exists: the anchor-engagement seed inherits your anchors' timezone, so it can
+    never surface a reachable account if your anchors are all US-centric. Your own graph can.
+    """
+    import re
+    here = os.path.dirname(os.path.abspath(__file__))
+    pillar = re.compile(r"\b(ai|ml|llm|agent|infra|devops|kubernetes|cloud|backend|distributed|"
+                        r"database|platform|engineer|open.?source|systems|rust|golang|python)", re.I)
+    anchors = {h.lower() for h in (d.get("targets_a") or []) + (d.get("targets_b") or [])}
+    out, seen = [], set()
+    for fn in ("followings.json", "followers.json"):
+        p = os.path.join(here, fn)
+        if not os.path.exists(p):
+            continue
+        for u in json.load(open(p)):
+            h = (u.get("userName") or "").lower()
+            if not h or h in anchors or h in seen:
+                continue
+            if not (min_f <= (u.get("followers") or 0) <= max_f):
+                continue
+            if not pillar.search(u.get("description") or ""):
+                continue
+            seen.add(h)
+            out.append(h)
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser(description="Find anchors whose clock overlaps yours")
-    ap.add_argument("--min-followers", type=int, default=60000)
+    # The FLOOR was the bug. 60000 was cargo-culted from advice written for large accounts.
+    # Measured against the user's own following graph (2026-07-15): every account in the
+    # 60k-800k band posts on a US clock -- @thdxr 30% awake-overlap, @championswimmer 14% --
+    # while the 12k-60k band is full of on-pillar accounts at 80-100% overlap with ~0 median
+    # replies (@eatonphil 29k/90%, @asmah2107 36k/84%, @johncrickett 13k/80%). At 1,093
+    # followers a 20k account is still ~20x amplification AND far likelier to notice a reply.
+    # A high floor did not filter for quality, it filtered for the wrong timezone.
+    ap.add_argument("--min-followers", type=int, default=12000)
     # A CEILING matters more than the floor. First pass found @jack (9.9M), @satyanadella
     # (7.1M), @aplusk (14M): their tweets take 500+ replies within minutes, so earliness ->
     # 0 and you are reply #2000 — invisible. Reach you cannot get early on is worthless.
@@ -46,6 +86,11 @@ def main():
                     help="if their posts routinely draw more than this, you can never be early")
     ap.add_argument("--min-overlap", type=float, default=0.5, help="share of posts in your awake window")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--from-graph", action="store_true",
+                    help="seed from YOUR OWN following/follower graph (followings.json + "
+                         "followers.json) instead of who your anchors reply to. Free -- that "
+                         "data is already on disk -- and it is the only seed that can escape "
+                         "your anchors' timezone. This is how the 2026-07-15 IST cohort was found.")
     args = ap.parse_args()
 
     import candidate_source as cs
@@ -57,6 +102,11 @@ def main():
 
     # who do your anchors reply TO? those accounts are on-pillar by construction and are
     # a far better pool than topic search (which is crypto-polluted).
+    # NOTE: seeding from who your anchors engage with INHERITS THEIR TIMEZONE. If your anchors
+    # are US-centric, this pool can only ever return US-centric accounts -- it structurally
+    # cannot fix a timezone ceiling. The complementary (and free) source is the user's own
+    # following/follower graph: followings.json + followers.json, no API spend. See
+    # docs/growth-anchors.md.
     seeds = (d.get("targets_b") or [])[:12]
     pool = collections.Counter()
     for i in range(0, len(seeds), 12):
@@ -69,6 +119,13 @@ def main():
                         pool[h] += 1
     cands = [h for h, n in pool.most_common(40) if n >= 2]
     print(f"  {len(cands)} candidate accounts your anchors engage with")
+
+    if args.from_graph:
+        g = graph_candidates(d, args.min_followers, args.max_followers)
+        fresh = [h for h in g if h not in cands]
+        cands = cands + fresh
+        print(f"  + {len(fresh)} from YOUR OWN graph (free, and not bound to your anchors' "
+              f"timezone) -> {len(cands)} total")
 
     found = []
     for h in cands[:20]:
