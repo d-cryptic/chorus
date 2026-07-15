@@ -114,3 +114,15 @@ CREATE TABLE IF NOT EXISTS playbook (
   fingerprint TEXT,
   created_at INTEGER NOT NULL
 );
+
+-- Captures: "a direct request always wins" (v0 G1 priority #1). Written by
+-- session_mine.py (which runs on the laptop, where the sessions are) and consumed by
+-- post_gen.py (which runs on the box). Shape-only text: the miner redacts and leak-checks
+-- BEFORE anything reaches here.
+CREATE TABLE IF NOT EXISTS capture (
+  id TEXT PRIMARY KEY,
+  text TEXT NOT NULL,
+  source TEXT,
+  consumed INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);

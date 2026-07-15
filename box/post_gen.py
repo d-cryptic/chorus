@@ -82,6 +82,17 @@ def timeline_ideas(n=5):
             for c in cands[:n]]
 
 
+def capture_ideas_remote(base, token):
+    """Captures from the Worker — written by session_mine.py on the laptop (that is where
+    the Claude sessions live). These are YOUR OWN WORK and win over any trend."""
+    try:
+        rows = _req(f"{base}/api/box/captures", token=token).get("captures", [])
+    except Exception as e:
+        print(f"  captures unavailable: {repr(e)[:40]}"); return []
+    return [{"source": r.get("source") or "capture", "kind": "capture", "title": r["text"],
+             "url": None, "signal": "your own work", "_cid": r["id"]} for r in rows]
+
+
 def capture_ideas(path=None):
     """User captures — 'a direct request always wins' (PRD-11 G1 priority #1).
 
@@ -220,7 +231,7 @@ def main():
             print(f"post_gen refused ({e.reason}): {e}"); return
 
     # G1 priority: capture > breaking trend > evergreen. Captures always win.
-    ideas = capture_ideas()
+    ideas = capture_ideas() + ([] if args.dry_run else capture_ideas_remote(base, token))
     if ideas:
         print(f"captures: {len(ideas)} (these win over trends)")
     ideas += hn_ideas(pillars) + github_ideas(pillars)
@@ -269,6 +280,9 @@ def main():
             print(f"  [{d['strength']:.2f}] ({idea['source']}) {d['drafts'][0][:100]}")
         else:
             ingest(base, token, payload)
+            if idea.get("_cid"):   # a capture drafts once, then retires
+                try: _req(f"{base}/api/box/capture-consume", "POST", token, {"id": idea["_cid"]})
+                except Exception: pass
         emitted += 1
 
     if not args.dry_run:

@@ -294,6 +294,30 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
         .bind(b.id, b.action, b.final_text ?? null, b.reason ?? null, now).run();
       return json({ ok: true, status: st });
     }
+    if (req.method === "POST" && p === "/api/box/capture") {
+      const t = String(b?.text ?? "").trim();
+      if (!t) return json({ error: "text required" }, 400);
+      // id = hash of the text, so re-mining the same session never duplicates the idea
+      const id = [...t].reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0).toString(36);
+      await env.DB.prepare(
+        "INSERT INTO capture (id, text, source, created_at) VALUES (?,?,?,?) ON CONFLICT(id) DO NOTHING"
+      ).bind(id, t.slice(0, 400), b?.source ?? null, now).run();
+      return json({ ok: true, id });
+    }
+
+    if (req.method === "GET" && p === "/api/box/captures") {
+      const { results } = await env.DB.prepare(
+        "SELECT id, text, source FROM capture WHERE consumed=0 ORDER BY created_at DESC LIMIT 20"
+      ).all();
+      return json({ captures: results });
+    }
+
+    if (req.method === "POST" && p === "/api/box/capture-consume") {
+      if (b?.id) await env.DB.prepare("UPDATE capture SET consumed=1 WHERE id=?").bind(b.id).run();
+      return json({ ok: true });
+    }
+
+
     if (req.method === "POST" && (p === "/api/box/ingest" || p === "/api/ingest")) {
       await env.DB.prepare(
         `INSERT INTO suggestion (id, tweet_id, tweet_url, tweet_text, author_handle, author_tier, score, factors, pillar, angle, drafts, rationale, target, gif, thread, media, status, created_at, expires_at)

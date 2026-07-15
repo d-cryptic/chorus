@@ -288,3 +288,40 @@ distinct beats (PRD-11), never padding.
 A post is queued with `target='post'` and a **synthetic** `tweet_id` (`post:<id>`) because
 that column is NOT NULL + UNIQUE — v0 uses the same tagged-synthetic-ref trick, and it
 doubles as the dedup key so the same HN story never queues twice.
+
+## session_mine.py — your own work as post ideas (shape-only)
+
+Reads recent Claude Code sessions + your public GitHub activity and extracts abstract
+SHAPES for the capture lane ("a direct request always wins", v0 G1 priority #1).
+
+**Threat model — read before touching this.** Sessions hold client code, secrets, absolute
+paths, repo/employer names and private conversations. The OUTPUT is a public tweet. So:
+
+- **L1 local redaction**: only the USER's own prompt lines are read (never assistant
+  output, tool results or file contents — that is where code lives), then secrets / paths /
+  URLs / emails / IPs / repo-shaped tokens are stripped BEFORE the LLM sees anything.
+- **L2 prompt**: forbids naming any company, client, repo, project, file, URL or person.
+- **L3 output check**: `leaks()` rejects a shape containing any project-slug token or
+  secret-shaped string. **Fails closed** — the idea is dropped, not published.
+- **L4**: every idea still lands in the queue for you to approve. Nothing self-posts.
+- `CHORUS_SESSION_DENY` (csv substrings) skips whole projects — use it for client work.
+
+Runs on the **laptop** (that is where sessions are) and POSTs to `/api/box/capture`;
+`post_gen.py` on the box consumes them, drafts once, then marks them consumed.
+
+Verified live: 9 active projects -> 7 shapes, **0 leaks** in a full audit of the queue
+(no repo names, paths, emails or keys).
+
+## memes.py — DORMANT by design
+
+Every meme source needs a credential this project does not have, so the lane is built and
+inert; with no key it returns `[]` and the queue simply carries **no** meme rather than a
+broken image. Nothing fabricates media.
+
+| source | unlocks | cost |
+|---|---|---|
+| `GIPHY_API_KEY` | reaction GIFs (SEARCH only per v0 + "Powered By GIPHY" attribution) | free, 30s |
+| `REDDIT_CLIENT_ID`/`_SECRET` | r/ProgrammerHumor memes; also revives enrich.py's dead reddit lane | free, 2min |
+| `IMGFLIP_USER`/`_PASS` | GENERATE a captioned meme (v0 mediaIntent='meme') | free |
+
+Run `python3 memes.py` to see live status.

@@ -1,0 +1,7 @@
+CREATE TABLE IF NOT EXISTS capture (
+  id TEXT PRIMARY KEY,
+  text TEXT NOT NULL,
+  source TEXT,
+  consumed INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);

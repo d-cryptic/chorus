@@ -13,6 +13,7 @@ from __future__ import annotations
 import os, sys, json, time, argparse, hashlib, urllib.request, urllib.error
 import budget as B
 import generate as G
+import memes
 
 DEFAULT_WEIGHTS = {"pillar": 0.22, "author": 0.18, "upside": 0.16, "fresh": 0.12, "saturation": 0.15, "relationship": 0.10, "angle": 0.24}
 TIER = {"A": 1.0, "B": 0.6, "C": 0.3}
@@ -159,9 +160,10 @@ def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche=""):
         "plausible-sounding number is a lie and will be caught in public.\n"
         "3. Having no data is FINE and normal. Reply with a sharp opinion, a concrete "
         "question, a counterexample, a mechanism, or a disagreement — none need data.\n"
-        "4. CLASSY, FUN, LIGHT — witty, never zany. Aim for dry wit, understatement, a "
-        "clever turn of phrase, a light touch, gentle playful pushback. The tone to hit is "
-        "'sharp person being funny at a dinner party', NOT 'terminally online guy yelling'.\n"
+        "4. SIMPLE, COOL, DRY. Short plain words — say it the way you would to a friend, "
+        "not the way you would write it down. Dry wit and understatement; let the joke be "
+        "in the OBSERVATION, not in the punctuation. If a GIF is attached it carries the "
+        "humour, so the text can just be smart and calm. Never zany, never yelling.\n"
         "   HARD LIMITS so it stays classy: at most ONE emoji (usually zero). At most ONE "
         "slang term in the whole reply. NEVER 'bro', 'lowkey', 'hell yes', 'fire', 'goated', "
         "'no-brainer', 'gamechanger', 'this slaps', stacked exclamation marks, or 🔥🚀💯. "
@@ -524,7 +526,9 @@ def run(args):
             "pillar": pillar, "angle": d.get("angle"), "drafts": drafts,
             "target": route,
             "gif": d.get("gif"), "thread": d.get("thread") or [],
-            "media": c.get("media") or [],
+            # the target tweet's own media, plus a reaction GIF if the meme lane has a key
+            # (dormant by default -> [] -> the queue just carries no gif, never a broken one)
+            "media": (c.get("media") or []) + memes.for_draft(d.get("gif")),
             "rationale": f"{route_why} | pre {pre} + angle {astr}",
             "expires_at": now + WINDOW_H * 3600 * 1000,
         }
