@@ -40,6 +40,11 @@ MUTANTS = [
     # --dry-run was a hole straight through the breaker: fake $10 ceiling, real paid calls.
     ("post_gen.py", "if not args.no_budget:\n        flush_spend", "if False:\n        flush_spend",
      "BUDGET: dry-run spend goes unbooked again"),
+    # --no-budget skips the ceiling, so it must also make no paid call. Otherwise it is the
+    # same hole with a friendlier name — which is exactly what I shipped first.
+    ("post_gen.py", '        api_key = ""\n        tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)',
+     "        tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)",
+     "BUDGET: --no-budget spends past the ceiling again"),
     # Silence is what hid three bugs in one day. If the voice pipeline degrades quietly again,
     # the next person gets generic drafts and no idea why.
     ("ranker.py", "def _degraded(site: str, exc: Exception) -> None:\n    if site in _WARNED:",

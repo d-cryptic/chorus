@@ -241,8 +241,12 @@ def main():
     # REAL budget. The fake $10 ceiling meant a dry-run could spend past the breaker and
     # never hit the ledger — the money is real, so the accounting is. --no-budget is for
     # offline tests that stub the network, not for previewing past the ceiling.
-    tracker = (B.BudgetTracker(spent=0.0, ceiling=10.0)
-               if getattr(args, "no_budget", False) else None)
+    if getattr(args, "no_budget", False):
+        # Same rule as post_gen/fast_lane: no ceiling => no spending. Enforced, not promised.
+        api_key = ""
+        tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)
+    else:
+        tracker = None
     d = mine(posts, model=model, api_key=api_key, tracker=tracker, mode=args.mode)
     if not d:
         return

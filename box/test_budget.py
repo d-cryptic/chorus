@@ -144,6 +144,31 @@ def run():
     rk = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "ranker.py")).read()
     chk("if args.dry_run else llm_draft(" in rk, "ranker's dry-run really is dry (stubs the LLM)")
 
+    # --- --no-budget must ENFORCE no paid call, not merely claim it ------------------
+    # I "closed" the dry-run hole by putting the fake $10 ceiling behind --no-budget and
+    # writing `# offline/CI only: makes no paid call` next to it. Nothing enforced that. The
+    # LLM call still happened, so --dry-run --no-budget spent real money past the ceiling —
+    # the same hole with a friendlier name AND a false assurance in the source, which is worse
+    # than the bug it replaced. A flag whose safety depends on the caller remembering
+    # something is not a safety feature.
+    # Enforced by clearing api_key so the drafters take their no-key stub path.
+    import re as _re2
+    for path in ("post_gen.py", "fast_lane.py", "style_mine.py"):
+        src = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), path)).read()
+        if "no_budget" not in src:
+            continue
+        # find the no_budget branch and require it to drop the key
+        idx = src.index("no_budget")
+        window = src[idx:idx + 600]
+        chk('api_key = ""' in window,
+            f"{path}: the --no-budget branch CLEARS api_key (no ceiling => no spending)")
+    # and the drafters must actually honour an empty key by not calling out
+    import post_gen as _pg
+    chk("if not api_key:" in inspect.getsource(_pg.draft_post),
+        "draft_post returns without calling the LLM when the key is empty")
+    chk("if not api_key" in inspect.getsource(_pg.classify_shape),
+        "classify_shape does the same (it is a second paid call, easy to forget)")
+
     print(f"BUDGET UNIT: {p} passed, {f} failed"); return f
 
 import sys; sys.exit(run())

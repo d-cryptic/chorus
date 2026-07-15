@@ -107,6 +107,9 @@ def main():
         # never hit the ledger — the money is real, so the accounting is. --no-budget is for
         # offline tests that stub the network, not for previewing past the ceiling.
         if args.no_budget:
+            # Skipping the ceiling MUST mean making no paid call, or this is the same hole
+            # with a friendlier name. Enforced by dropping the key, not by asking nicely.
+            api_key = ""
             tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)
         else:
             raise SystemExit("fast_lane --dry-run makes paid calls: pass --no-budget (offline) or run it for real")

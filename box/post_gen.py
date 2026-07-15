@@ -446,7 +446,13 @@ def main():
     # the ledger could explain. The money is real, so the accounting is real. If the budget
     # is spent, a dry-run is refused too, which is correct: there is nothing left to spend.
     if args.dry_run and args.no_budget:
-        tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)   # offline/CI only: makes no paid call
+        # --no-budget skips the real ceiling, so it MUST also make no paid call — otherwise it
+        # is the same hole with a friendlier name, and the comment claiming "offline only" is
+        # a lie in the source. Enforced, not asserted: drop the API key so draft_post takes
+        # its no-key path and returns a stub. A flag whose safety depends on the caller
+        # remembering something is not a safety feature.
+        api_key = ""
+        tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)
     else:
         from ranker import get_budget
         try:
