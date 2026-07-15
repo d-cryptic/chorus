@@ -99,10 +99,12 @@ export function GifChip({ q }: { q: string }) {
   );
 }
 
-export function Counter({ text }: { text: string }) {
+export function Counter({ text, limit = 280 }: { text: string; limit?: number }) {
+  // Premium Plus allows a single post far past 280, so a long-form draft must not be shown
+  // as a red over-limit error. Callers pass the limit that actually applies to that shape.
   const n = tweetLength(text);
-  const color = n > 280 ? "var(--destructive)" : n >= 260 ? "var(--warning)" : "var(--muted-foreground)";
-  return <span className="mono text-[12px] tabular-nums" style={{ color }}>{n}/280</span>;
+  const color = n > limit ? "var(--destructive)" : n >= limit * 0.93 ? "var(--warning)" : "var(--muted-foreground)";
+  return <span className="mono text-[12px] tabular-nums" style={{ color }}>{n}/{limit}</span>;
 }
 
 export { cn };

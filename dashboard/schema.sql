@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS suggestion (
   media          TEXT,                          -- JSON [{type,url,page}] from the tweet
   gif            TEXT,                          -- Giphy SEARCH phrase (v0: search, never generate)
   thread         TEXT,                          -- JSON array; only when the take needs >280 chars
+  longform       TEXT,                          -- single >280 post (Premium Plus); depth without separable beats
 
   status         TEXT NOT NULL DEFAULT 'queued', -- queued|posted|dismissed|snoozed|expired
   created_at     INTEGER NOT NULL,

@@ -332,6 +332,7 @@ function scoreColor(n: number) { return n >= 0.8 ? "var(--primary)" : n >= 0.6 ?
 function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditing, dismissing, setDismissing, act, postOnX }: any) {
   const drafts: string[] = parse(s.drafts, []);
   const thread: string[] = parse(s.thread, []);
+  const longform: string = s.longform || "";   // Premium Plus single post; depth without separable beats
   const url = s.tweet_url || (s.tweet_id ? `https://x.com/i/web/status/${s.tweet_id}` : null);
   const body = drafts[pick] ?? "";
   const [text, setText] = useState(body);
@@ -408,6 +409,15 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
                 {s.gif && <GifChip q={s.gif} />}
                 <div className="mt-2"><Counter text={body} /></div>
               </Tweet>
+              {longform && (
+                <Tweet handle={ME} text={longform} ts={Date.now()}>
+                  <div className="mt-2 flex items-center gap-2">
+                    <Counter text={longform} limit={25000} />
+                    <span className="text-[11px] font-mono px-1.5 py-0.5 rounded"
+                          style={{ color: "var(--primary)", border: "1px solid var(--border)" }}>LONG</span>
+                  </div>
+                </Tweet>
+              )}
               {thread.map((t, i) => (
                 <Tweet key={i} handle={ME} text={t} ts={Date.now()} connector={i < thread.length - 1}>
                   <div className="mt-2 flex items-center gap-2">
