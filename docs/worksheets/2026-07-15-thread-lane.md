@@ -62,3 +62,45 @@ $0.0009 -> $0.0018 per run for the extra classify call.
   scoped to post/thread. Necessary but NOT sufficient — it alone did not make threads fire.
 - The prompts themselves contained 8 em-dashes while banning em-dashes. Prompts must obey
   the rules they state, or they teach the habit.
+
+## Why threads still never fire on REAL input (and why that is correct)
+
+The lane works: 3/3 on fixtures, end to end — thread 5 segments, longform 491 chars, one-liner
+stays a post. It has still never fired in production. That is not a bug. Measured:
+
+**Every real idea is single-beat.**
+- HN/GitHub: headlines. "Bonsai 27B runs on a phone" is one claim.
+- Session captures, all 5 of them, 0 plausibly multi-beat:
+    "Found that a backfill script hadn't been tested on staging..."
+    "Diagnosed maxed-out laptop fan as likely caused by numerous dev containers..."
+    "Explored running development agents on ephemeral cloud infrastructure..."
+    "Investigated whether development sessions could persist when moved..."
+    "Considering whether a specific Kubernetes policy engine is actually needed..."
+
+classify_shape calling these `post` is CORRECT. Forcing a thread onto one beat is padding,
+which is what PRD-11 forbids and what makes an account read as a bot.
+
+### The real opportunity, and why I did NOT build it
+
+Three of those five captures are beats of ONE story: moving a dev environment to the cloud
+(fan/containers -> ephemerality -> session persistence). Individually single-beat; together a
+genuine thread. So the thread lane needs GROUPING, not a better classifier.
+
+`correlate_sources` already groups — but it deliberately skips same-source pairs ("two HN
+stories are not corroboration"), and all captures are source=session. That rule is right for
+CORROBORATION (same story, several sources = stronger) and wrong for THEMATIC GROUPING
+(different observations, one source, one theme = a thread). They are different operations.
+
+I tested whether the cheap method would work anyway. It does not: the only capture pair
+sharing >=2 tokens shares **"development"** and **"running"** — generic dev vocabulary, not a
+theme. Grouping on that would fuse unrelated captures into fake threads, which is worse than
+no threads.
+
+Real thematic grouping needs embeddings (Supermemory has them, local and free) or an LLM call.
+**Not built, on purpose:** n=5 captures, and 0 threads have ever been posted, so there is zero
+evidence threads perform for this user. Building semantic clustering on that is speculation —
+the same pattern that produced today's retracted taste claim ("you post statements, not
+questions", drawn from data that was 60% false).
+
+**Revisit when:** captures reach ~20 AND at least one thread has been posted and measured. Then
+cluster with the local embeddings and let winning_shape say whether it was worth it.
