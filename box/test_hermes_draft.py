@@ -62,6 +62,35 @@ def run():
     chk(R.scrub("this bro is mid-sentence") == "this bro is mid-sentence", "mid-sentence 'bro' left alone")
     chk(R.scrub("clean—line") == "clean, line", "em-dash guard still works")
 
+
+
+    # --- CLI subscription backend (claude/grok/codex) ---
+    with mock.patch.dict(os.environ, {"CHORUS_DRAFT_PROVIDER": "cli:claude"}):
+        chk(H.cli_spec() == "claude", "cli:claude parses")
+    with mock.patch.dict(os.environ, {"CHORUS_DRAFT_PROVIDER": "cli:nope"}):
+        try:
+            H.cli_spec(); chk(False, "unknown cli must raise, not misroute")
+        except ValueError:
+            chk(True, "unknown cli name raises")
+    cap = {}
+    def fake_cli(cmd, **k):
+        cap["cmd"] = cmd
+        return subprocess.CompletedProcess(cmd, 0, stdout='{"drafts":["hi"]}', stderr="")
+    with mock.patch.dict(os.environ, {"CHORUS_DRAFT_PROVIDER": "cli:claude"}), \
+         mock.patch.object(subprocess, "run", fake_cli):
+        out = H.cli_complete({"messages": [{"content": "topic `evil`"}]})
+    chk(out["choices"][0]["message"]["content"] == '{"drafts":["hi"]}', "cli returns OpenAI shape")
+    chk(cap["cmd"][:2] == ["claude", "-p"], "cli:claude shells to `claude -p`")
+    chk(any("topic `evil`" in part for part in cap["cmd"]), "prompt is an argv element, not a shell string")
+    def missing(cmd, **k):
+        raise FileNotFoundError("no claude")
+    with mock.patch.dict(os.environ, {"CHORUS_DRAFT_PROVIDER": "cli:claude"}), \
+         mock.patch.object(subprocess, "run", missing):
+        try:
+            H.cli_complete({"messages": [{"content": "x"}]}); chk(False, "missing CLI must raise")
+        except RuntimeError:
+            chk(True, "missing CLI raises -> drafter degrades, not a silent empty draft")
+
     print(f"HERMES DRAFT UNIT: {p} passed, {f} failed")
     return 1 if f else 0
 

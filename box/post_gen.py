@@ -324,7 +324,9 @@ def _chat(body, api_key):
     shape either way, so the callers parse it identically. A Hermes failure raises exactly like
     an OpenRouter failure, so the existing degrade-not-crash handling covers both."""
     import hermes_backend as H
-    if H.hermes_spec() is not None:
+    if H.cli_spec() is not None:            # cli:claude|grok|codex — subscription, $0
+        return H.cli_complete(body)
+    if H.hermes_spec() is not None:         # hermes:<provider>:<model>
         return H.hermes_complete(body)
     return _req("https://openrouter.ai/api/v1/chat/completions", "POST", api_key, body)
 

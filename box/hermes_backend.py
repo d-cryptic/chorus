@@ -63,3 +63,52 @@ def hermes_complete(body, *, timeout=90):
     if not content:
         raise RuntimeError(f"hermes returned nothing (stderr: {r.stderr[:80]})")
     return {"choices": [{"message": {"content": content}}]}
+
+
+# --- CLI subscription backends: draft with claude/grok/codex using the LOGGED-IN CLI ---
+# CHORUS_DRAFT_PROVIDER = "cli:claude" | "cli:grok" | "cli:codex"
+# Uses the subscription auth already on the machine (the sanctioned client -> no raw-API
+# rate limit, $0 marginal). The CLI must be authed where drafting RUNS (laptop today; the box
+# once `hermes auth add` / a claude login is done there).
+_CLI = {
+    "claude": lambda prompt: ["claude", "-p", prompt],
+    "grok":   lambda prompt: ["grok", "-p", prompt],
+    "codex":  lambda prompt: ["codex", "exec", "--skip-git-repo-check", prompt],
+}
+
+
+def cli_spec():
+    raw = os.environ.get("CHORUS_DRAFT_PROVIDER", "")
+    if not raw.startswith("cli:"):
+        return None
+    name = raw.split(":", 1)[1]
+    if name not in _CLI:
+        raise ValueError(f"CHORUS_DRAFT_PROVIDER cli:<name> must be one of {sorted(_CLI)}, got {name!r}")
+    return name
+
+
+def cli_complete(body, *, timeout=120):
+    """One completion through a logged-in CLI, shaped like an OpenRouter response.
+
+    Raises on failure so the drafter degrades exactly as it does for an OpenRouter error --
+    never a silent empty draft. The prompt is a single argv element (no shell), so tweet text
+    cannot inject."""
+    name = cli_spec()
+    if name is None:
+        raise RuntimeError("cli_complete called but CHORUS_DRAFT_PROVIDER is not cli:*")
+    prompt = "\n\n".join(m.get("content", "") for m in body.get("messages", []) if m.get("content"))
+    if not prompt:
+        raise ValueError("cli_complete: empty prompt")
+    cmd = _CLI[name](prompt)
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired as e:
+        raise RuntimeError(f"{name} cli timed out after {timeout}s") from e
+    except FileNotFoundError as e:
+        raise RuntimeError(f"{name} cli not installed where drafting runs") from e
+    if r.returncode != 0:
+        raise RuntimeError(f"{name} cli exit {r.returncode}: {(r.stderr or r.stdout)[:120]}")
+    content = _extract(r.stdout)
+    if not content:
+        raise RuntimeError(f"{name} cli returned nothing")
+    return {"choices": [{"message": {"content": content}}]}
