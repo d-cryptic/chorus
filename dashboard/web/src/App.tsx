@@ -132,7 +132,20 @@ export default function App() {
   };
 
   const draftsOf = (s: Sug) => parse(s.drafts, []) as string[];
-  const selected = (s: Sug) => draftsOf(s)[pick[s.id] ?? 0] ?? "";
+  /** Stable per-suggestion rotation so the "hero" slot is not always index 0. */
+  const heroOffset = (s: Sug) => {
+    const n = draftsOf(s).length || 1;
+    let h = 0;
+    for (const c of s.id) h = ((h << 5) - h + c.charCodeAt(0)) | 0;
+    return Math.abs(h) % n;
+  };
+  /** display order -> the ORIGINAL draft index, which is what we record. */
+  const orderOf = (s: Sug) => {
+    const n = draftsOf(s).length;
+    const off = heroOffset(s);
+    return Array.from({ length: n }, (_, i) => (i + off) % n);
+  };
+  const selected = (s: Sug) => draftsOf(s)[pick[s.id] ?? heroOffset(s)] ?? "";
   const intent = (s: Sug, text: string) =>
     // a post is standalone: never attach in_reply_to, even if a source ref exists
     `https://x.com/intent/post?text=${encodeURIComponent(text)}` +
@@ -157,8 +170,9 @@ export default function App() {
       if (e.key === "j") setCursor((c) => Math.min(c + 1, items.length - 1));
       else if (e.key === "k") setCursor((c) => Math.max(c - 1, 0));
       else if (["1", "2", "3"].includes(e.key)) {
+        const ord = orderOf(s);                       // display position -> true index
         const i = Number(e.key) - 1;
-        if (i < draftsOf(s).length) setPick((p) => ({ ...p, [s.id]: i }));
+        if (i < ord.length) setPick((p) => ({ ...p, [s.id]: ord[i] }));
       }
       else if (e.key === "p") postOnX(s);
       else if (e.key === "e") setEditing(s.id);
@@ -276,7 +290,8 @@ export default function App() {
           : items.length === 0 && !blocked ? <Empty beat={beat} onRefresh={load} />
           : items.map((s, i) => (
               <Card key={s.id} i={i} s={s} focused={i === cursor} onFocus={() => setCursor(i)}
-                    pick={pick[s.id] ?? 0} setPick={(n: number) => setPick((p) => ({ ...p, [s.id]: n }))}
+                    order={orderOf(s)}
+                    pick={pick[s.id] ?? heroOffset(s)} setPick={(n: number) => setPick((p) => ({ ...p, [s.id]: n }))}
                     editing={editing === s.id} setEditing={(v: boolean) => setEditing(v ? s.id : null)}
                     dismissing={dismissing === s.id} setDismissing={(v: boolean) => setDismissing(v ? s.id : null)}
                     act={act} postOnX={postOnX} />
@@ -314,7 +329,7 @@ export default function App() {
 
 function scoreColor(n: number) { return n >= 0.8 ? "var(--primary)" : n >= 0.6 ? "var(--foreground)" : DIM; }
 
-function Card({ s, i, focused, onFocus, pick, setPick, editing, setEditing, dismissing, setDismissing, act, postOnX }: any) {
+function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditing, dismissing, setDismissing, act, postOnX }: any) {
   const drafts: string[] = parse(s.drafts, []);
   const thread: string[] = parse(s.thread, []);
   const url = s.tweet_url || (s.tweet_id ? `https://x.com/i/web/status/${s.tweet_id}` : null);
@@ -405,11 +420,12 @@ function Card({ s, i, focused, onFocus, pick, setPick, editing, setEditing, dism
                   triples scroll and makes the real target tweet visually equal to drafts. */}
               {drafts.length > 1 && (
                 <div className="px-4 pb-2">
-                  {drafts.map((d, i) => i === pick ? null : (
-                    <button key={i} onClick={() => setPick(i)}
+                  {(order || drafts.map((_: any, k: number) => k)).map((real: number, posn: number) =>
+                    real === pick ? null : (
+                    <button key={real} onClick={() => setPick(real)}
                       className="block w-full text-left text-[12.5px] py-1.5 pl-[52px] pr-2 truncate transition-colors hover:text-[var(--foreground)]"
                       style={{ color: "var(--muted-foreground)" }}>
-                      <span className="mono mr-1.5 opacity-60">{i + 1}</span>{d.slice(0, 80)}
+                      <span className="mono mr-1.5 opacity-60">{posn + 1}</span>{(drafts[real] || "").slice(0, 80)}
                     </button>
                   ))}
                 </div>

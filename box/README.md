@@ -483,9 +483,16 @@ matched+measured 2` at 1.00 overlap. Zero extra steps for you.
 Known gap: only *replies* are discoverable this way — `post`/`quote` targets need a
 different query lane.
 
-## Known bias: draft#0 is over-picked
+## Position bias in the draft picker — found in real data, then fixed
 
-Real data: you picked draft **#0 ×4, #1 ×2, #2 ×1**. That is probably **position bias, not
-preference** — the picker renders #0 full-size and collapses the rest, so #0 is the path of
-least resistance. If rank_tune learns "draft#0's style wins" from *layout*, it learns
-garbage. Worth randomising render order, or weighting the signal down, before trusting it.
+Real data: you picked draft **#0 ×4, #1 ×2, #2 ×1**. That was **position bias, not
+preference** — the picker rendered #0 full-size and collapsed the rest, so #0 was the path
+of least resistance. rank_tune would have learned "draft#0's style wins" from *layout* and
+called it a preference.
+
+Fixed: the "hero" slot now **rotates per suggestion**, hashed deterministically off the
+suggestion id — so it is stable across reloads (a draft must never jump under your cursor)
+but spreads across drafts in aggregate (measured over 8 real ids: `{0:2, 1:3, 2:3}`). The
+TRUE draft index is still what gets recorded, so `draft_index` finally measures preference
+instead of layout. This costs nothing because the drafts were never ranked — `llm_draft`
+returns them in arbitrary order, so #0 was never "best", just first.
