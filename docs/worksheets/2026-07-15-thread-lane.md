@@ -1,6 +1,7 @@
-# Thread / long-form lane is plumbed but never fires
+# Thread / long-form lane: was dead, now FIRES
 
-**Status:** diagnosed, prototype works, NOT finished. Do not claim threads work.
+**Status: FIXED and verified 2026-07-15.** 3/3 on the fixtures, end-to-end.
+Kept for the diagnosis, which is the useful part.
 
 **Goal:** user asked for thread posts + long-form + correlation. Threads/long-form are built
 end-to-end (post_gen -> D1 `thread`/`longform` -> Worker -> App.tsx renders connectors + LONG
@@ -26,21 +27,31 @@ cannot measure which shape wins when only one shape is ever produced.
    an `invented_any` self-report (force `post` when true) gives correct `longform` on the
    causal-argument case.
 
-## The open problem
+## The fix (all of it shipped)
 
-~1/3 of classify calls return an EMPTY response body from deepseek via OpenRouter
-(`json.loads` -> "Expecting value: line 1 column 1 (char 0)"). A different case fails each
-run, so it is reliability, not prompt. Needs retry + a fail-safe default (`post` on failure:
-never pad, never block a draft).
+1. `post_gen.classify_shape()` -- a SEPARATE call. Extract-don't-invent + an `invented_any`
+   self-report; a claimed thread with <3 extracted beats is downgraded to post. Retries 3x
+   (~1/3 of calls returned an EMPTY body from deepseek via OpenRouter -- flakiness, not
+   prompt) and fails safe to `post`: a wrong post costs a little reach, a wrong thread
+   publishes padding under the user's name.
+2. `build_prompt(..., shape=)` asks for ONE shape, and the chosen shape is the REQUIRED
+   field. This was the whole bug: `drafts: [2 post strings]` was always required with
+   thread/longform optional, and the required field always won.
+3. `scrub()` strips em/en dashes, smart quotes and ellipses from every output. The em-dash
+   ban is stated in the prompt and the model ignored it anyway ("isn't about quality
+   control—it's a sneaky way"). Prompt adherence is a request; scrub is a guarantee.
 
-## Next step
+## Verified
 
-1. Take `box/shape_classify_prototype.py` (works; run: `./run.sh python3
-   shape_classify_prototype.py [model]`).
-2. Add retry-on-empty (2 tries) and default to `post` on failure.
-3. Wire as a SEPARATE cheap call before `draft_post`; pass the decided shape in, and make
-   `drafts[]` conditional on `shape=post` so the post-centric framing cannot reassert itself.
-4. Verify against all three fixtures in the prototype before believing it.
+    ./run.sh python3 shape2.py     # classifier: 3/3
+    ./run.sh python3 shape3.py     # end-to-end: thread=5 segments, longform=491ch, post=post
+
+box/test_shape.py (16 tests) pins it. Full suite 182 green.
+
+**Note on real data:** a live post_gen run returns `post` for all 3 HN ideas. That is
+CORRECT, not a regression: HN titles are single-beat headlines. Threads should fire on
+richer input (user captures, session-mined material), not on "Show HN: X". Cost went
+$0.0009 -> $0.0018 per run for the extra classify call.
 
 ## Traps found the hard way
 

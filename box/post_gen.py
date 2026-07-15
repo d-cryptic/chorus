@@ -145,7 +145,38 @@ def og_image(url, timeout=8):
     return None
 
 
-def build_prompt(idea, voice, examples, niche, pillars):
+
+# The shape is already decided (classify_shape). Ask for ONE shape only: when `drafts` was
+# always required alongside optional `thread`/`longform`, the model returned a post every
+# single time -- the required field wins. So the required field must BE the chosen shape.
+_TAIL = ('"angle": str (why this is worth posting), "strength": 0..1 (is this actually worth '
+         'posting at all? be harsh - most ideas are not)}')
+
+_SHAPE_BRIEFS = {
+    "post": (
+        "\nWrite a SINGLE post. It must land in 280 chars.\n"
+        'Return JSON {"drafts": [2 post strings], "thread": [], "longform": "", ' + _TAIL),
+    "thread": (
+        "\nThis idea has been judged a THREAD: it has 3+ separable beats. Write the thread. "
+        "3-7 segments, hook in the first, each segment under 280 chars, each carrying ONE "
+        "beat. Do NOT pad: if a segment has nothing of its own to say, cut it.\n"
+        'Return JSON {"thread": [3-7 strings, REQUIRED], '
+        '"drafts": [1 standalone-post fallback string], "longform": "", ' + _TAIL),
+    "longform": (
+        "\nThis idea has been judged LONGFORM: one argument with depth that would break if "
+        "split into separate posts. Write it. 400-1500 chars; the 280 limit does NOT apply "
+        "(this account has Premium Plus). No listicle scaffolding, no 'Here is why:', no "
+        "LinkedIn cadence. Same dry voice as everything above.\n"
+        'Return JSON {"longform": str (REQUIRED, 400-1500 chars), '
+        '"drafts": [1 standalone-post fallback string], "thread": [], ' + _TAIL),
+}
+
+
+def _shape_brief(shape):
+    return _SHAPE_BRIEFS.get(shape, _SHAPE_BRIEFS["post"])
+
+
+def build_prompt(idea, voice, examples, niche, pillars, *, shape="post"):
     ex = ("\n".join(f"- {e}" for e in examples))[:600]
     return (
         "You draft an ORIGINAL X post that a REAL person will publish from their own "
@@ -179,32 +210,108 @@ def build_prompt(idea, voice, examples, niche, pillars):
         "post. Do not reach.\n"
         "   Longform still obeys every voice rule above: same dry wit, no em-dashes, no "
         "hashtags, no sign-off, no LinkedIn cadence, no 'Here's why:' listicle scaffolding.\n"
-        "\nFIRST decide the SHAPE, then write only that shape. Decide honestly from the idea, "
-        "not from habit: count the distinct beats.\n"
-        "  - 3+ separable beats that each stand alone  -> \"thread\"\n"
-        "  - one argument with real depth that would BREAK if split -> \"longform\"\n"
-        "  - it lands in 280 -> \"post\"  (this is the common case, but it is NOT the default: "
-        "if the idea earns thread or longform, say so. Do not shrink a 3-beat idea into one "
-        "line just to play safe.)\n"
-        "\nReturn JSON {\"shape\": \"post\"|\"thread\"|\"longform\", "
-        "\"shape_why\": str (name the beats you counted, or why it cannot be split), "
-        "\"drafts\": [2 post strings], "
-        "\"thread\": [3-7 strings, REQUIRED when shape=thread, else []], "
-        "\"longform\": str (400-1500 chars, REQUIRED when shape=longform, else \"\"), "
-        "\"angle\": str (why this is worth posting), \"strength\": 0..1 (is this actually "
-        "worth posting at all? be harsh - most ideas are not)}"
+        + _shape_brief(shape)
     )
 
 
-def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker):
+
+
+def scrub(text):
+    """Strip the machine tells the prompt asks for but the model does not reliably obey.
+
+    The em-dash ban is stated in the rules and the model STILL emitted "isn't about quality
+    control—it's a sneaky way". Prompt adherence is a request; this is a guarantee. Deterministic
+    beats polite every time.
+    """
+    if not text:
+        return text
+    t = text.replace("\u2014", ", ").replace("\u2013", ", ")   # em/en dash -> comma
+    t = t.replace("\u2019", "'").replace("\u201c", '"').replace("\u201d", '"')  # smart quotes
+    t = t.replace("\u2026", "...")
+    while ", ," in t:
+        t = t.replace(", ,", ",")
+    return t.replace(" ,", ",").strip()
+
+def classify_shape(idea, *, model, api_key, tracker=None):
+    """Decide post vs thread vs longform in a SEPARATE call. Returns (shape, why).
+
+    Why separate: build_prompt is post-centric (`drafts: [2 post strings]` is always
+    required), so a `shape` field inside it is an afterthought and the model always answered
+    "post" -- even for an idea literally enumerating three beats, and even on
+    claude-sonnet-4.5. Measured: the identical idea handed to a standalone classifier comes
+    back "thread" with all three beats extracted. The framing was the bug, not the model.
+
+    Why "extract, don't invent": a naive standalone classifier over-fires -- it turned
+    "GitHub is down again." into a 3-beat thread by inventing the beats. Padding a one-liner
+    into a thread is exactly what PRD-11 forbids, so beats must be QUOTED from the idea and
+    the model self-reports `invented_any`.
+
+    Fail-safe is "post": a wrong "post" costs a little reach; a wrong "thread" publishes
+    padding under the user's name. Never block a draft on this call.
+    """
+    title = (idea.get("title") or "").strip()
+    if not api_key or not title:
+        return "post", "no key/title"
+    p = ("Classify how this idea should be published on X. Nothing else.\n"
+         f"<idea>{title}</idea>\n"
+         "STEP 1. EXTRACT the beats ALREADY PRESENT in the idea text. A beat is a distinct "
+         "claim the idea ACTUALLY MAKES. Quote the words from the idea for each one.\n"
+         "  You may NOT invent, extrapolate or elaborate a beat. If a beat is not literally "
+         "in the idea text, it does not exist. 'GitHub is down again' contains exactly ONE "
+         "beat, not three: turning it into three would be padding, which is forbidden.\n"
+         "STEP 2. Pick the shape from what you extracted:\n"
+         "  3+ extracted beats, each standing alone -> thread\n"
+         "  1-2 beats but the idea states a MECHANISM or CAUSAL argument that breaks if "
+         "split -> longform\n"
+         "  otherwise -> post\n"
+         'Return JSON {"beats": [each beat quoted from the idea], "invented_any": bool, '
+         '"shape": "post"|"thread"|"longform"}')
+    body = {"model": model, "response_format": {"type": "json_object"}, "max_tokens": 400,
+            "messages": [{"role": "user", "content": p}]}
+    # ~1/3 of these come back with an EMPTY body from deepseek via OpenRouter; a different
+    # input fails each run, so it is flakiness, not the prompt. Retry, then fall back.
+    for attempt in range(3):
+        try:
+            if tracker is not None:
+                tracker.check("llm_draft", 1)
+            out = _req("https://openrouter.ai/api/v1/chat/completions", "POST", api_key, body)
+            if tracker is not None:
+                tracker.record("llm_draft", 1)
+            txt = (out["choices"][0]["message"]["content"] or "").strip()
+            if txt.startswith("```"):
+                txt = txt.strip("`").split("\n", 1)[-1].rsplit("```", 1)[0]
+            if not txt:
+                continue                      # empty body -> retry
+            d = json.loads(txt)
+            shape = (d.get("shape") or "post").strip().lower()
+            if shape not in ("post", "thread", "longform"):
+                return "post", f"unknown shape {shape!r}"
+            beats = [b for b in (d.get("beats") or []) if b]
+            if d.get("invented_any"):
+                return "post", "model admits it invented beats -> padding"
+            if shape == "thread" and len(beats) < 3:
+                return "post", f"claimed thread but extracted only {len(beats)} beat(s)"
+            return shape, f"{len(beats)} beat(s) extracted"
+        except B.BudgetError as e:
+            return "post", f"budget: {e.reason}"
+        except Exception as e:
+            if attempt == 2:
+                return "post", f"classify failed: {repr(e)[:40]}"
+    return "post", "empty response after 3 tries"
+
+def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker, shape=None):
     if not api_key:
         return None
     try:
         tracker.check("llm_draft", 1)
     except B.BudgetError as e:
         print(f"  skipped ({e.reason})"); return None
+    # Shape is decided in its own call (classify_shape) because deciding it INSIDE this
+    # post-centric prompt always returned "post". Passed in so the framing cannot override it.
+    if shape is None:
+        shape, _why = classify_shape(idea, model=model, api_key=api_key, tracker=tracker)
     body = {"model": model, "response_format": {"type": "json_object"}, "max_tokens": 1600,   # longform needs room; thread+2 drafts+longform
-            "messages": [{"role": "user", "content": build_prompt(idea, voice, examples, niche, pillars)}]}
+            "messages": [{"role": "user", "content": build_prompt(idea, voice, examples, niche, pillars, shape=shape)}]}
     try:
         out = _req("https://openrouter.ai/api/v1/chat/completions", "POST", api_key, body)
         tracker.record("llm_draft", 1)
@@ -212,7 +319,6 @@ def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker
         if txt.startswith("```"):
             txt = txt.strip("`").split("\n", 1)[-1].rsplit("```", 1)[0]
         d = json.loads(txt)
-        shape = (d.get("shape") or "post").strip().lower()
         lf = (d.get("longform") or "").strip()
         th = [x for x in (d.get("thread") or []) if x][:7]
         # trust the DECLARED shape, not the presence of a stray field: the model used to
@@ -225,9 +331,9 @@ def draft_post(idea, *, voice, examples, niche, pillars, model, api_key, tracker
         # ~280 was never long-form in the first place, it was just a post.
         if len(lf) < 280:
             lf = ""
-        return {"drafts": [x for x in d.get("drafts", []) if x][:2],
-                "thread": th,
-                "longform": lf[:1500],
+        return {"drafts": [scrub(x) for x in d.get("drafts", []) if x][:2],
+                "thread": [scrub(x) for x in th],
+                "longform": scrub(lf[:1500]),
                 "shape": shape, "shape_why": d.get("shape_why", ""),
                 "angle": d.get("angle", ""), "strength": float(d.get("strength", 0.5))}
     except Exception as e:
