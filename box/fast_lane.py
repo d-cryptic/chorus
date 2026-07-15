@@ -79,6 +79,15 @@ def main():
     pillars = [p.strip() for p in os.environ.get("CHORUS_PILLARS", "").split(",") if p.strip()]
     now = int(time.time() * 1000)
 
+    # A find is only worth money if you can reply inside the window. Measured anchor
+    # posting by hour (IST): 01:00-07:59 carries 40% of posts but is unreachable — you are
+    # asleep, and a 4h-old reply earns ~0. Skip most of those polls; keep 1-in-3 so the
+    # 07:00 tail and any early rise still get caught.
+    hr = time.localtime().tm_hour
+    if not args.dry_run and 1 <= hr <= 7 and (int(time.time()) // 600) % 3 != 0:
+        print(f"quiet window ({hr:02d}:00 local) — skipping poll (you cannot reply in time)")
+        return
+
     if args.dry_run:
         tracker = B.BudgetTracker(spent=0.0, ceiling=10.0)
         voice = os.environ.get("CHORUS_VOICE", "concise")
