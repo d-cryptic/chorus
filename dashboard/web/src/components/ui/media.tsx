@@ -11,14 +11,14 @@ export function MediaGrid({ media }: { media: M[] }) {
   return (
     <div
       className={cn(
-        "mt-3 grid gap-0.5 overflow-hidden rounded-2xl border border-[var(--line)]",
+        "mt-3 grid gap-0.5 overflow-hidden rounded-2xl border border-[var(--border)]",
         items.length === 1 ? "grid-cols-1" : "grid-cols-2"
       )}
       style={{ maxHeight: 290 }}
     >
       {items.map((m, i) => (
         <a key={i} href={m.page || m.url} target="_blank" rel="noreferrer"
-           className={cn("relative block bg-[var(--surface)]", items.length === 3 && i === 0 && "row-span-2")}>
+           className={cn("relative block bg-[var(--card)]", items.length === 3 && i === 0 && "row-span-2")}>
           <img
             src={m.url}
             alt=""

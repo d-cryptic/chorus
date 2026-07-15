@@ -98,9 +98,15 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
       const row = await env.DB.prepare("SELECT started_at, finished_at, suggested, error, credits FROM run_log ORDER BY id DESC LIMIT 1").first();
       // Recent failures, so a dead provider / blown budget is visible in the UI instead
       // of only in /var/log/chorus.log where nobody looks.
+      // An alert is only LIVE if nothing has succeeded since. Otherwise a fixed problem
+      // (e.g. credits topped up) keeps shouting from history — which is exactly what
+      // happened: 2 old no_credits rows kept the banner up on a 981k-credit account.
+      const lastOk = await env.DB.prepare(
+        "SELECT id FROM run_log WHERE error IS NULL AND finished_at IS NOT NULL ORDER BY id DESC LIMIT 1"
+      ).first<{ id: number }>();
       const { results: alerts } = await env.DB.prepare(
-        "SELECT started_at, error FROM run_log WHERE error IS NOT NULL AND started_at > ? ORDER BY id DESC LIMIT 5"
-      ).bind(Date.now() - 7 * 86400000).all();
+        "SELECT started_at, error FROM run_log WHERE error IS NOT NULL AND id > ?1 AND started_at > ?2 ORDER BY id DESC LIMIT 5"
+      ).bind(lastOk?.id ?? 0, Date.now() - 7 * 86400000).all();
       return json({ lastRun: row ?? null, alerts });
     }
     // Human control surface for the safety switches. Without this the kill-switch is

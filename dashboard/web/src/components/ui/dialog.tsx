@@ -17,7 +17,7 @@ export const DialogContent = React.forwardRef<
       ref={ref}
       className={cn(
         "fixed left-1/2 top-1/2 z-50 w-[92vw] max-w-[380px] -translate-x-1/2 -translate-y-1/2",
-        "rounded-2xl border border-[#2f3336] bg-[#16181c] p-6 shadow-2xl",
+        "rounded-2xl border-border bg-popover p-6 shadow-2xl",
         "data-[state=open]:animate-fade-in focus:outline-none",
         className
       )}

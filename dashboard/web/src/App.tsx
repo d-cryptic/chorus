@@ -158,37 +158,40 @@ export default function App() {
   };
 
   const blocked =
-    cfg?.killed ? { tone: "#f4212e", title: "Kill-switch on — nothing runs", cta: "Release", act: () => setSetting({ killed: 0 }) }
-    : cfg?.paused ? { tone: "#ffd400", title: "Paused — cycles stopped (resumable)", cta: "Resume", act: () => setSetting({ paused: 0 }) }
-    : alerts[0]?.error === "no_credits" ? { tone: "#f4212e", title: "Provider credits exhausted", cta: "Top up twitterapi.io (100k = $1)", href: "https://twitterapi.io" }
+    cfg?.killed ? { tone: "var(--destructive)", title: "Kill-switch on — nothing runs", cta: "Release", act: () => setSetting({ killed: 0 }) }
+    : cfg?.paused ? { tone: "var(--warning)", title: "Paused — cycles stopped (resumable)", cta: "Resume", act: () => setSetting({ paused: 0 }) }
+    // key off the CURRENT balance, not a historical error row
+    : credits !== null && credits <= 0
+      ? { tone: "var(--destructive)", title: "Provider credits exhausted",
+          cta: "Top up twitterapi.io (100k = $1)", href: "https://twitterapi.io" }
     : null;
 
   return (
     <TooltipProvider delayDuration={300}>
-    <div className="min-h-screen flex justify-center" style={{ background: "var(--bg)", color: "var(--text)" }}>
+    <div className="min-h-screen flex justify-center" style={{ background: "var(--background)", color: "var(--foreground)" }}>
       {/* mirror of the right rail: balances the composition so the FEED is centred */}
       <div className="hidden lg:block w-[350px] shrink-0" aria-hidden />
 
-      <main className="w-full max-w-[600px]" style={{ borderLeft: `1px solid var(--line-soft)`, borderRight: `1px solid var(--line-soft)`, background: "linear-gradient(180deg,rgba(255,255,255,.012),transparent 240px)" }}>
+      <main className="w-full max-w-[600px]" style={{ borderLeft: `1px solid var(--border)`, borderRight: `1px solid var(--border)`, background: "linear-gradient(180deg, color-mix(in oklch, var(--primary) 3%, transparent), transparent 260px)" }}>
         <header className="sticky top-0 z-10 flex items-center gap-3 px-4 h-[53px] backdrop-blur"
-                style={{ background: "color-mix(in srgb, var(--bg) 72%, transparent)", borderBottom: `1px solid var(--line-soft)` }}>
-          <span className="text-[17px] leading-none" style={{ color: "var(--faint)" }}>✳</span>
+                style={{ background: "color-mix(in oklch, var(--background) 78%, transparent)", borderBottom: `1px solid var(--border)` }}>
+          <span className="text-[17px] leading-none" style={{ color: "var(--muted-foreground)" }}>✳</span>
           <h1 className="text-[19px] font-semibold tracking-[-0.02em]">Queue</h1>
-          <span className="mono text-[11px] flex items-center gap-1.5 tracking-tight" style={{ color: "var(--faint)" }}>
+          <span className="mono text-[11px] flex items-center gap-1.5 tracking-tight" style={{ color: "var(--muted-foreground)" }}>
             <Activity size={11} /> {beat}
           </span>
           <div className="ml-auto flex items-center gap-1">
             <button onClick={() => setSetting({ paused: cfg?.paused ? 0 : 1 })} title="pause / resume"
-                    className="p-2 rounded-full hover:bg-[#181818]">
-              {cfg?.paused ? <Play size={16} style={{ color: "#ffd400" }} /> : <Pause size={16} style={{ color: DIM }} />}
+                    className="p-2 rounded-full hover:bg-secondary">
+              {cfg?.paused ? <Play size={16} style={{ color: "var(--warning)" }} /> : <Pause size={16} style={{ color: DIM }} />}
             </button>
             <button onClick={() => { if (cfg?.killed || confirm("Kill-switch: halt every paid call now?")) setSetting({ killed: cfg?.killed ? 0 : 1 }); }}
-                    title="kill-switch" className="p-2 rounded-full hover:bg-[#181818]">
-              <OctagonX size={16} style={{ color: cfg?.killed ? "#f4212e" : DIM }} />
+                    title="kill-switch" className="p-2 rounded-full hover:bg-secondary">
+              <OctagonX size={16} style={{ color: cfg?.killed ? "var(--destructive)" : DIM }} />
             </button>
             <Tooltip>
               <TooltipTrigger asChild>
-                <button onClick={load} className="p-2 rounded-full hover:bg-[#181818]">
+                <button onClick={load} className="p-2 rounded-full hover:bg-secondary">
                   <RefreshCw size={16} style={{ color: DIM }} />
                 </button>
               </TooltipTrigger>
@@ -198,8 +201,8 @@ export default function App() {
               <TooltipTrigger asChild>
                 <button onClick={fetchNow} disabled={fetching}
                   className="ml-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium disabled:opacity-40
-                             flex items-center gap-1.5 transition-colors hover:bg-[var(--surface-2)]"
-                  style={{ border: "1px solid var(--line)", color: "var(--muted)" }}>
+                             flex items-center gap-1.5 transition-colors hover:bg-[var(--secondary)]"
+                  style={{ border: "1px solid var(--border)", color: "var(--muted-foreground)" }}>
                   <Download size={12.5} /> {fetching ? "Fetching…" : "Fetch"}
                 </button>
               </TooltipTrigger>
@@ -234,8 +237,8 @@ export default function App() {
       </main>
 
       <aside className="hidden lg:block w-[350px] shrink-0 px-6 py-3 sticky top-0 h-screen">
-        <div className="rounded-2xl p-5" style={{ background: "var(--surface)", border: "1px solid var(--line-soft)" }}>
-          <h2 className="text-[12px] font-medium uppercase tracking-[0.14em] mb-3" style={{ color: "var(--faint)" }}>Agent</h2>
+        <div className="rounded-2xl p-5" style={{ background: "var(--card)", border: "1px solid var(--border)" }}>
+          <h2 className="text-[12px] font-medium uppercase tracking-[0.14em] mb-3" style={{ color: "var(--muted-foreground)" }}>Agent</h2>
           <Stat label="spend today" value={`$${spend.toFixed(2)}`} />
           {credits !== null && (
             <Stat label="provider credits" danger={credits < 5000}
@@ -246,8 +249,8 @@ export default function App() {
           <Stat label="state" danger={Boolean(cfg?.killed)}
                 value={cfg?.killed ? "KILLED" : cfg?.paused ? "paused" : "running"} />
           <button onClick={() => setHelp(true)}
-            className="mono mt-4 w-full rounded-lg py-2 text-[11px] transition-colors hover:bg-[var(--surface-2)]"
-            style={{ border: "1px solid var(--line-soft)", color: "var(--faint)" }}>
+            className="mono mt-4 w-full rounded-lg py-2 text-[11px] transition-colors hover:bg-[var(--secondary)]"
+            style={{ border: "1px solid var(--border)", color: "var(--muted-foreground)" }}>
             shortcuts  ?
           </button>
         </div>
@@ -255,13 +258,13 @@ export default function App() {
 
       <Dialog open={help} onOpenChange={setHelp}><DialogContent><Help /></DialogContent></Dialog>
       <Toaster theme="dark" position="bottom-center"
-        toastOptions={{ style: { background: "#16181c", border: `1px solid ${LINE}`, color: "#e7e9ea", borderRadius: 9999 } }} />
+        toastOptions={{ style: { background: "var(--card)", border: `1px solid ${LINE}`, color: "var(--foreground)", borderRadius: 9999 } }} />
     </div>
     </TooltipProvider>
   );
 }
 
-function scoreColor(n: number) { return n >= 0.8 ? "#00ba7c" : n >= 0.6 ? "#e7e9ea" : DIM; }
+function scoreColor(n: number) { return n >= 0.8 ? "var(--primary)" : n >= 0.6 ? "var(--foreground)" : DIM; }
 
 function Card({ s, i, focused, onFocus, pick, setPick, editing, setEditing, dismissing, setDismissing, act, postOnX }: any) {
   const drafts: string[] = parse(s.drafts, []);
@@ -278,33 +281,33 @@ function Card({ s, i, focused, onFocus, pick, setPick, editing, setEditing, dism
 
   return (
     <div ref={ref} onClick={onFocus}
-         style={{ borderBottom: `1px solid var(--line-soft)`, boxShadow: focused ? "inset 2px 0 0 var(--muted)" : undefined, animationDelay: `${Math.min(i, 6) * 28}ms` }}
-         className={cn("rise transition-colors", focused ? "bg-[var(--surface)]" : "hover:bg-[rgba(255,255,255,.014)]")}>
+         style={{ borderBottom: `1px solid var(--border)`, boxShadow: focused ? "inset 2px 0 0 var(--muted-foreground)" : undefined, animationDelay: `${Math.min(i, 6) * 28}ms` }}
+         className={cn("rise transition-colors", focused ? "bg-[var(--card)]" : "hover:bg-card")}>
       {/* Chorus chrome — an instrument, deliberately not X */}
-      <div className="mono flex items-center gap-2 px-4 pt-3 text-[11px] tracking-tight" style={{ color: "var(--faint)" }}>
+      <div className="mono flex items-center gap-2 px-4 pt-3 text-[11px] tracking-tight" style={{ color: "var(--muted-foreground)" }}>
         <span className="tabular-nums" style={{ color: scoreColor(s.score) }}>{s.score.toFixed(2)}</span>
         <span>·</span>
-        <span className="uppercase tracking-[0.08em]" style={{ color: "var(--muted)" }}>{s.target || "reply"}</span>
+        <span className="uppercase tracking-[0.08em]" style={{ color: "var(--muted-foreground)" }}>{s.target || "reply"}</span>
         {s.pillar && <><span>·</span><span>{s.pillar}</span></>}
         {s.author_tier && <><span>·</span><span>tier {s.author_tier}</span></>}
         {url && <a href={url} target="_blank" className="ml-auto hover:underline" style={{ color: DIM }}>on X (o)</a>}
       </div>
       {/* the angle is WHY this was picked — the fastest "is it worth it?" signal */}
       {s.angle && (
-        <p className="px-4 pt-1.5 pb-0.5 text-[13.5px] leading-[19px]" style={{ color: "var(--muted)" }}>
-          <span style={{ color: "var(--faint)" }}>— </span>{s.angle}
+        <p className="px-4 pt-1.5 pb-0.5 text-[13.5px] leading-[19px]" style={{ color: "var(--muted-foreground)" }}>
+          <span style={{ color: "var(--muted-foreground)" }}>— </span>{s.angle}
         </p>
       )}
 
       {isPost ? (
         // An original post has no parent tweet. Show WHERE the idea came from, plainly.
         <a href={url || "#"} target="_blank" rel="noreferrer"
-           className="mx-4 my-2 flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-[13px] no-underline transition-colors hover:bg-[var(--surface-2)]"
-           style={{ border: `1px solid var(--line-soft)`, background: "var(--surface)" }}>
-          <span className="mono shrink-0 text-[10px] uppercase tracking-[0.1em] pt-0.5" style={{ color: "var(--faint)" }}>
+           className="mx-4 my-2 flex items-start gap-2.5 rounded-xl px-3 py-2.5 text-[13px] no-underline transition-colors hover:bg-[var(--secondary)]"
+           style={{ border: `1px solid var(--border)`, background: "var(--card)" }}>
+          <span className="mono shrink-0 text-[10px] uppercase tracking-[0.1em] pt-0.5" style={{ color: "var(--muted-foreground)" }}>
             {String(s.author_handle || "idea")}
           </span>
-          <span className="min-w-0" style={{ color: "#e7e9ea" }}>
+          <span className="min-w-0" style={{ color: "var(--foreground)" }}>
             {String(s.tweet_text || "").replace(/^\[[^\]]+\]\s*/, "")}
           </span>
         </a>
@@ -320,13 +323,13 @@ function Card({ s, i, focused, onFocus, pick, setPick, editing, setEditing, dism
             <div className="px-4 py-3">
               <textarea value={text} onChange={(e) => setText(e.target.value)} autoFocus rows={4}
                 className="w-full bg-transparent outline-none resize-none"
-                style={{ fontSize: 15, lineHeight: "20px", color: "#e7e9ea" }} />
+                style={{ fontSize: 15, lineHeight: "20px", color: "var(--foreground)" }} />
               <div className="flex items-center gap-2 mt-2">
                 <Counter text={text} />
                 <button onClick={() => { act(s, "posted_edited", { final_text: text }); setEditing(false); }}
                   className="ml-auto rounded-full px-4 py-1.5 text-[14px] font-bold" style={{ background: X_BLUE, color: "#fff" }}>Save</button>
                 <button onClick={() => setEditing(false)}
-                  className="rounded-full px-4 py-1.5 text-[14px]" style={{ border: `1px solid #536471`, color: DIM }}>Cancel</button>
+                  className="rounded-full px-4 py-1.5 text-[14px]" style={{ border: `1px solid var(--border)`, color: DIM }}>Cancel</button>
               </div>
             </div>
           ) : (
@@ -350,8 +353,8 @@ function Card({ s, i, focused, onFocus, pick, setPick, editing, setEditing, dism
                 <div className="px-4 pb-2">
                   {drafts.map((d, i) => i === pick ? null : (
                     <button key={i} onClick={() => setPick(i)}
-                      className="block w-full text-left text-[12.5px] py-1.5 pl-[52px] pr-2 truncate transition-colors hover:text-[var(--text)]"
-                      style={{ color: "var(--faint)" }}>
+                      className="block w-full text-left text-[12.5px] py-1.5 pl-[52px] pr-2 truncate transition-colors hover:text-[var(--foreground)]"
+                      style={{ color: "var(--muted-foreground)" }}>
                       <span className="mono mr-1.5 opacity-60">{i + 1}</span>{d.slice(0, 80)}
                     </button>
                   ))}
@@ -366,27 +369,27 @@ function Card({ s, i, focused, onFocus, pick, setPick, editing, setEditing, dism
         <div className="px-4 py-3 flex flex-wrap items-center gap-2" style={{ borderTop: `1px solid ${LINE}` }}>
           {REASONS.map((r) => (
             <button key={r} onClick={() => { act(s, "dismissed", { reason: r }); setDismissing(false); }}
-              className="rounded-full px-3 py-1 text-[13px] hover:bg-[#181818]"
-              style={{ border: `1px solid #536471`, color: "#e7e9ea" }}>{r}</button>
+              className="rounded-full px-3 py-1 text-[13px] hover:bg-secondary"
+              style={{ border: `1px solid var(--border)`, color: "var(--foreground)" }}>{r}</button>
           ))}
           <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="other…" autoFocus
             onKeyDown={(e) => { if (e.key === "Enter") { act(s, "dismissed", { reason }); setDismissing(false); } }}
-            className="bg-transparent outline-none text-[13px] flex-1 min-w-[80px]" style={{ color: "#e7e9ea" }} />
+            className="bg-transparent outline-none text-[13px] flex-1 min-w-[80px]" style={{ color: "var(--foreground)" }} />
           <button onClick={() => setDismissing(false)} className="text-[13px]" style={{ color: DIM }}>cancel</button>
         </div>
       ) : !editing && (
         <div className="px-4 py-3.5 flex flex-wrap gap-2" style={{ borderTop: `1px solid ${LINE}` }}>
           <button onClick={() => postOnX(s)}
                   className="rounded-full px-4 py-1.5 text-[13.5px] font-semibold transition-transform active:scale-[.97]"
-                  style={{ background: "var(--x-blue)", color: "#fff" }}>
+                  style={{ background: "var(--x-blue)", color: "#fff" }}>   {/* X-native action: the one sanctioned use */}
             {isRT ? "Retweet on X" : isPost ? "Post this" : "Post on X"} <span className="opacity-60">(p)</span>
           </button>
-          {!isRT && <button onClick={() => setEditing(true)} className="rounded-full px-4 py-1.5 text-[13.5px] font-medium transition-colors hover:bg-[var(--surface-2)]"
-                    style={{ border: `1px solid var(--line)`, color: "var(--text)" }}>Edit (e)</button>}
-          <button onClick={() => act(s, "snoozed")} className="rounded-full px-4 py-1.5 text-[13.5px] transition-colors hover:bg-[var(--surface-2)]"
-                  style={{ border: `1px solid var(--line)`, color: "var(--muted)" }}>Snooze (s)</button>
-          <button onClick={() => setDismissing(true)} className="rounded-full px-4 py-1.5 text-[13.5px] transition-colors hover:bg-[rgba(244,33,46,.08)]"
-                  style={{ border: "1px solid var(--line)", color: "var(--danger)" }}>Dismiss (x)</button>
+          {!isRT && <button onClick={() => setEditing(true)} className="rounded-full px-4 py-1.5 text-[13.5px] font-medium transition-colors hover:bg-[var(--secondary)]"
+                    style={{ border: `1px solid var(--border)`, color: "var(--foreground)" }}>Edit (e)</button>}
+          <button onClick={() => act(s, "snoozed")} className="rounded-full px-4 py-1.5 text-[13.5px] transition-colors hover:bg-[var(--secondary)]"
+                  style={{ border: `1px solid var(--border)`, color: "var(--muted-foreground)" }}>Snooze (s)</button>
+          <button onClick={() => setDismissing(true)} className="rounded-full px-4 py-1.5 text-[13.5px] transition-colors hover:bg-destructive/10"
+                  style={{ border: "1px solid var(--border)", color: "var(--destructive)" }}>Dismiss (x)</button>
         </div>
       )}
     </div>
@@ -412,18 +415,18 @@ function Empty({ beat, onRefresh }: any) {
       <p className="text-[15px] font-bold">Queue clear</p>
       <p className="text-[13px] font-mono mt-1" style={{ color: DIM }}>last cycle {beat} · next ~02:30</p>
       <button onClick={onRefresh} className="mt-3 rounded-full px-4 py-1.5 text-[14px] font-bold"
-              style={{ border: `1px solid #536471`, color: "#e7e9ea" }}>Refresh</button>
+              style={{ border: `1px solid var(--border)`, color: "var(--foreground)" }}>Refresh</button>
     </div>
   );
 }
 
 function Stat({ label, value, sub, danger }: any) {
   return (
-    <div className="flex items-baseline justify-between gap-3 py-2.5" style={{ borderTop: `1px solid var(--line-soft)` }}>
-      <div className="text-[12.5px]" style={{ color: "var(--faint)" }}>{label}</div>
+    <div className="flex items-baseline justify-between gap-3 py-2.5" style={{ borderTop: `1px solid var(--border)` }}>
+      <div className="text-[12.5px]" style={{ color: "var(--muted-foreground)" }}>{label}</div>
       <div className="text-right">
-        <div className="mono text-[13px] tabular-nums" style={{ color: danger ? "var(--danger)" : "var(--text)" }}>{value}</div>
-        {sub && <div className="mono text-[10.5px]" style={{ color: "var(--faint)" }}>{sub}</div>}
+        <div className="mono text-[13px] tabular-nums" style={{ color: danger ? "var(--destructive)" : "var(--foreground)" }}>{value}</div>
+        {sub && <div className="mono text-[10.5px]" style={{ color: "var(--muted-foreground)" }}>{sub}</div>}
       </div>
     </div>
   );
@@ -435,13 +438,13 @@ function Help() {
              ["z", "undo last action"], ["?", "this help"]];
   return (
     <>
-      <DialogTitle className="text-[12px] font-medium uppercase tracking-[0.14em] mb-4" style={{ color: "var(--faint)" }}>Shortcuts</DialogTitle>
+      <DialogTitle className="text-[12px] font-medium uppercase tracking-[0.14em] mb-4" style={{ color: "var(--muted-foreground)" }}>Shortcuts</DialogTitle>
       <div>
         {K.map(([k, d]) => (
           <div key={k} className="flex items-center justify-between py-1.5 text-[13px]">
             <span className="mono rounded-md px-1.5 py-0.5 text-[11px]"
-                  style={{ background: "var(--surface-2)", border: "1px solid var(--line)", color: "var(--text)" }}>{k}</span>
-            <span style={{ color: "var(--muted)" }}>{d}</span>
+                  style={{ background: "var(--secondary)", border: "1px solid var(--border)", color: "var(--foreground)" }}>{k}</span>
+            <span style={{ color: "var(--muted-foreground)" }}>{d}</span>
           </div>
         ))}
       </div>
@@ -460,7 +463,7 @@ function Insights({ data }: { data: any }) {
   const Row = ({ label, val, pct }: any) => (
     <div className="flex items-center gap-2 text-[13px] font-mono py-0.5">
       <span className="w-24 truncate text-right" style={{ color: DIM }}>{label}</span>
-      <div className="h-1.5 flex-1 rounded-sm" style={{ background: "#2f3336" }}>
+      <div className="h-1.5 flex-1 rounded-sm" style={{ background: "var(--border)" }}>
         <div className="h-1.5 rounded-sm" style={{ width: `${pct}%`, background: X_BLUE }} />
       </div>
       <span style={{ color: DIM }}>{val}</span>

@@ -7,8 +7,8 @@ import { cn } from "@/lib/utils";
  *  inventing a stat in a draft — it makes a draft indistinguishable from a real tweet. */
 
 export const X_BLUE = "var(--x-blue)";
-export const DIM = "var(--muted)";
-export const LINE = "var(--line)";
+export const DIM = "var(--muted-foreground)";
+export const LINE = "var(--border)";
 
 const URL_RE = /https?:\/\/\S+/g;
 const CJK = /[ᄀ-ᇿ⺀-〾ぁ-㏿㐀-䶿一-鿿ꀀ-꓏가-힣豈-﫿︰-﹏＀-｠￠-￦]/;
@@ -30,8 +30,8 @@ function Avatar({ handle, size = 40 }: { handle: string; size?: number }) {
   return (
     <div className="shrink-0 rounded-full grid place-items-center font-semibold select-none"
          style={{ width: size, height: size, fontSize: size * 0.4,
-                  background: "linear-gradient(160deg,#26262e,#17171c)",
-                  border: "1px solid var(--line)", color: "var(--muted)" }} aria-hidden>
+                  background: "linear-gradient(160deg, var(--secondary), var(--card))",
+                  border: "1px solid var(--border)", color: "var(--muted-foreground)" }} aria-hidden>
       {letter}
     </div>
   );
@@ -40,7 +40,7 @@ function Avatar({ handle, size = 40 }: { handle: string; size?: number }) {
 export function TweetText({ text }: { text: string }) {
   const parts = (text || "").split(/(https?:\/\/\S+|@\w{1,15}|#\w+)/g);
   return (
-    <div className="x-body whitespace-pre-wrap break-words" style={{ color: "var(--text)" }}>
+    <div className="x-body whitespace-pre-wrap break-words" style={{ color: "var(--foreground)" }}>
       {parts.map((p, i) =>
         /^(https?:\/\/|@|#)/.test(p) ? <span key={i} style={{ color: X_BLUE }}>{p}</span> : <span key={i}>{p}</span>
       )}
@@ -67,11 +67,11 @@ export function Tweet({
       <div className="flex flex-col items-center shrink-0">
         <Avatar handle={handle} />
         {/* X's thread connector: a rail from this avatar to the next. X does NOT indent. */}
-        {connector && <div className="w-0.5 grow mt-1" style={{ background: "#333639" }} />}
+        {connector && <div className="w-0.5 grow mt-1" style={{ background: "var(--border)" }} />}
       </div>
       <div className="min-w-0 flex-1 pb-3.5">
         <div className="x-body flex items-center gap-1">
-          <span className="font-bold truncate" style={{ color: "var(--text)" }}>{name || handle.replace(/^@/, "")}</span>
+          <span className="font-bold truncate" style={{ color: "var(--foreground)" }}>{name || handle.replace(/^@/, "")}</span>
           <span className="truncate" style={{ color: DIM }}>@{handle.replace(/^@/, "")}</span>
           {a && <><span style={{ color: DIM }}>·</span><span style={{ color: DIM }}>{a}</span></>}
         </div>
@@ -91,9 +91,9 @@ export function Tweet({
 export function GifChip({ q }: { q: string }) {
   return (
     <a href={`https://giphy.com/search/${encodeURIComponent(q)}`} target="_blank" rel="noreferrer"
-       className="mono mt-2 inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] no-underline transition-colors hover:bg-[var(--surface-2)]"
-       style={{ border: `1px dashed var(--line)`, color: "var(--faint)" }}>
-      <span style={{ color: "var(--faint)" }}>GIF</span>
+       className="mono mt-2 inline-flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-[12px] no-underline transition-colors hover:bg-[var(--secondary)]"
+       style={{ border: `1px dashed var(--border)`, color: "var(--muted-foreground)" }}>
+      <span style={{ color: "var(--muted-foreground)" }}>GIF</span>
       <span style={{ color: X_BLUE }}>{q}</span>
     </a>
   );
@@ -101,7 +101,7 @@ export function GifChip({ q }: { q: string }) {
 
 export function Counter({ text }: { text: string }) {
   const n = tweetLength(text);
-  const color = n > 280 ? "var(--danger)" : n >= 260 ? "var(--warn)" : "var(--faint)";
+  const color = n > 280 ? "var(--destructive)" : n >= 260 ? "var(--warning)" : "var(--muted-foreground)";
   return <span className="mono text-[12px] tabular-nums" style={{ color }}>{n}/280</span>;
 }
 
