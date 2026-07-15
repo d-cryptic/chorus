@@ -43,5 +43,24 @@ def run():
                      if ("—" in l or "–" in l) and "em-dash" not in l and l.strip().startswith('"')]
         chk(not offenders, f"{name} prompt does not itself use the em-dash it bans")
 
+    # --- do not ban the user's ACTUAL voice on taste -------------------------------------
+    # I wrote "Do not open with 'ngl' - it is a crutch" and "NEVER ... 🔥🚀💯" from my own
+    # aesthetic judgement ("so it stays classy"). Then I read what the user actually posts:
+    #   ngl opens 3 of their 10 posted replies
+    #   a single 🔥/🚀 appears in 3 of 10 posted — including their BEST performer
+    #       ("my laptop sounds like a jet engine ... 🔥", 4 likes / 80 views)
+    # The original bug was FREQUENCY (ngl opened 4 of 5 drafts = 80%), not the word. Banning
+    # it outright made the voice LESS like the user, which is the opposite of the job.
+    chk("Do not open with 'ngl'" not in src, "does not ban a word the user demonstrably uses")
+    chk("ngl' IS in this person's voice" in src, "ngl is treated as voice, with a frequency cap")
+    chk("never in more than one draft of a set" in src, "the cap is on FREQUENCY, which was the real bug")
+    chk("never STACKED" in src, "stacked emoji (the actual hype tell) stay banned")
+    chk("'bro'" in src and "'goated'" in src, "genuinely off-voice slang stays banned")
+    # the same over-correction was in post_gen
+    import post_gen as PG
+    psrc = PG.build_prompt({"source": "hn", "title": "t", "url": ""}, "v", (), "", ["ai"])
+    chk("Do not open with 'ngl'" not in psrc, "post_gen does not ban ngl either")
+    chk("never stacked" in psrc, "post_gen still bans stacking")
+
     print(f"VOICE TICS UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())
