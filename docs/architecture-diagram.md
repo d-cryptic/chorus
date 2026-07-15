@@ -58,10 +58,18 @@ flowchart TB
 - **Memory is BM25 over what you actually posted** — powering voice priming and a
   repetition guard so it never re-suggests a take you already made.
 
-## Honest footnotes (do NOT tag these)
+## Attribution status (what you may honestly claim)
 
-- **Hermes** — designed for, never installed. `/opt/hermes/` holds one file: `INSTALL_ME.txt`.
-  The box runs cron + plain Python. Tagging @NousResearch would be a false claim.
-- **Supermemory** — not used. `chorus-memory` is a stdlib+SQLite service that merely speaks
-  Supermemory's `/v3/documents` API, so upstream is a drop-in swap via `SUPERMEMORY_BASE_URL`.
-  Tagging @supermemoryai would be a false claim.
+- **Hermes — ✅ TRUE as of 2026-07-15.** Hermes Agent **v0.18.2** is installed on the box
+  (`/usr/local/lib/hermes-agent`, data in `/root/.hermes`), wired to OpenRouter, and
+  verified with a real LLM round-trip (`hermes -z ...` → `HERMES_LIVE`). Previously this
+  was a false claim: `/opt/hermes/` held exactly one file, `INSTALL_ME.txt`.
+  Honest scope: Hermes is installed and functional, but the Chorus pipeline (ranker /
+  fast_lane / post_gen) still runs as plain Python under cron — it does not yet route
+  through Hermes. "Hosted on the box alongside Chorus" is true; "Chorus runs on Hermes"
+  is not (yet).
+- **Supermemory — ❌ STILL FALSE.** The box runs `chorus-memory`, a stdlib+SQLite service
+  that merely *speaks* Supermemory's `/v3/documents` API. Real Supermemory is either the
+  hosted API (`https://api.supermemory.ai/v3/`, needs a key) or their self-host quickstart.
+  Either makes the claim true via one env var — `SUPERMEMORY_BASE_URL` — because the
+  service was built API-compatible for exactly this swap.
