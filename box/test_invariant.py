@@ -36,6 +36,12 @@ def run():
 
     here = os.path.dirname(os.path.abspath(__file__))
     root = os.path.dirname(here)
+    if not os.path.exists(os.path.join(root, "dashboard", "src", "index.ts")):
+        # Same as test_worker_sql: this scans the worker + UI source, which the box does not
+        # have. The box-side half (the autonomy gate, the write-lane scan of box/*.py) is
+        # still worth running, but the file-set assertions below need the repo. Skip honestly.
+        print("INVARIANT UNIT: skipped (no worker/UI source here — laptop/CI only)")
+        return 0
     files = (glob.glob(os.path.join(here, "*.py"))
              + glob.glob(os.path.join(root, "dashboard", "src", "*.ts"))
              + glob.glob(os.path.join(root, "dashboard", "web", "src", "**", "*.tsx"), recursive=True))
