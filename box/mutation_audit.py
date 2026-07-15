@@ -17,6 +17,13 @@ MUTANTS = [
      "since_ts = 0", "cost window removed (back to $1.30/day)"),
     ("ranker.py", 'if threshold is None:', 'if False:', "repeat-guard threshold ignored"),
     ("generate.py", '"grounded"', '"ungrounded"', "judge grounded dim renamed"),
+    # THE founding invariant. If any of these three go uncaught, the product's one safety
+    # property is decorative and the failure mode is the user's ACCOUNT, not a bad insight.
+    ("ranker.py", 'if autonomy not in ("L0", "L1"):', 'if autonomy not in ("L0", "L1", "L2"):',
+     "SUGGEST-ONLY: autonomy gate widened past L1"),
+    ("ranker.py", "def get_voice(fallback):",
+     'def _autopost(t, k):\n    return _req("https://api.x.com/2/tweets", "POST", k, {"text": t})\n\n\ndef get_voice(fallback):',
+     "SUGGEST-ONLY: a real write lane added"),
 ]
 
 def run_all():
