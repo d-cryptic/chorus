@@ -142,5 +142,31 @@ def run():
     chk("-filter:replies" in osrc, "discovers originals AND quotes")
     chk("filter:replies" in osrc, "still discovers replies")
 
+    # --- a broken write must not read as "nothing to do" --------------------------------
+    # Three swallows with real consequences, each indistinguishable from success:
+    #   outcome_track  a dead endpoint looked EXACTLY like "nothing matched" — which is how
+    #                  it reported success while writing orphan rows for its entire life
+    #   post_gen       an unconsumed capture drafts AGAIN next cycle: same idea twice, paid twice
+    #   style_mine     if every delete fails the supersede is a no-op and docs accumulate —
+    #                  exactly how today's poisoned niche pattern would have outlived its fix
+    import inspect
+    import outcome_track as OT, post_gen as PG2, style_mine as SM2
+    chk("failed.append" in inspect.getsource(OT.main), "outcome_track collects write failures")
+    chk("incomplete, not empty" in inspect.getsource(OT.main),
+        "...and distinguishes a broken endpoint from an empty result")
+    chk("will draft again next cycle" in inspect.getsource(PG2.main),
+        "post_gen names the CONSEQUENCE of an unconsumed capture")
+    chk("stuck.append" in inspect.getsource(SM2.supersede), "style_mine collects delete failures")
+
+    # and prove supersede actually SAYS it when every delete fails
+    real = SM2._req
+    SM2._req = lambda url, method="GET", token=None, body=None, **k: (
+        {"memories": [{"id": "a", "containerTags": ["t"]}]} if "list" in url
+        else (_ for _ in ()).throw(ConnectionError("refused")))
+    try:
+        chk(SM2.supersede("t", "") == 0, "supersede reports 0 deleted when deletes fail")
+    finally:
+        SM2._req = real
+
     print(f"CORRELATE UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())

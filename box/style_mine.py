@@ -133,14 +133,20 @@ def supersede(tag, key):
         out = _req(f"{SM_BASE}/v3/documents/list", "POST", key or None, {"limit": 500}) or {}
     except Exception as e:
         print(f"  supersede: list failed ({repr(e)[:40]}) — not deleting blind"); return 0
-    gone = 0
+    gone, stuck = 0, []
     for d in (out.get("memories") or []):
         if tag in (d.get("containerTags") or []):
             try:
                 _req(f"{SM_BASE}/v3/documents/{d['id']}", "DELETE", key or None)
                 gone += 1
-            except Exception:
-                pass          # a doc mid-ingest 409s; the next run gets it
+            except Exception as e:
+                # A 409 mid-ingest is expected. But if EVERY delete fails the supersede is a
+                # no-op and docs pile up - exactly how a poisoned niche pattern would
+                # outlive its own fix.
+                stuck.append(repr(e)[:40])
+    if stuck and not gone:
+        print(f"  WARN supersede deleted NOTHING ({len(stuck)} failed: {stuck[0]}) - "
+              f"stale docs will accumulate and the fresh one will not replace them")
     return gone
 
 

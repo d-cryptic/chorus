@@ -96,7 +96,7 @@ def main():
         print(f"  discovery failed: {repr(e)[:44]}"); return
     fb = _req(f"{base}/api/box/feedback?since=0", token=tok).get("feedback", [])
     posted = [f for f in fb if (f.get("action") or "").startswith("posted") and f.get("posted_text")]
-    seen, d = 0, 0
+    seen, d, failed = 0, 0, []
     for t in mine:
         for f in posted:
             best, sc = match(t.get("text") or "", [f["posted_text"]])
@@ -117,11 +117,15 @@ def main():
                       "replies": t.get("reply_count") or 0,
                       "profile_clicks": 0})
                 d += 1
-            except Exception:
-                pass
+            except Exception as e:
+                # A persistent failure here looks EXACTLY like "nothing matched" — which is
+                # how this file reported success while writing orphan rows for its whole life.
+                failed.append(repr(e)[:40])
             break
         seen += 1
     print(f"discovered {len(mine)} of your tweets (replies + originals), matched+measured {d} (no URL needed)")
+    if failed:
+        print(f"  WARN {len(failed)} outcome write(s) FAILED ({failed[0]}) - measurement is incomplete, not empty")
 
 if __name__ == "__main__":
     main()

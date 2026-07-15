@@ -520,8 +520,13 @@ def main():
         else:
             ingest(base, token, payload)
             if idea.get("_cid"):   # a capture drafts once, then retires
-                try: _req(f"{base}/api/box/capture-consume", "POST", token, {"id": idea["_cid"]})
-                except Exception: pass
+                try:
+                    _req(f"{base}/api/box/capture-consume", "POST", token, {"id": idea["_cid"]})
+                except Exception as e:
+                    # NOT silent: an unconsumed capture drafts AGAIN next cycle, so the user
+                    # gets the same idea twice and pays for it twice.
+                    print(f"  WARN capture {idea['_cid']} not consumed ({repr(e)[:40]}) "
+                          f"- it will draft again next cycle")
         emitted += 1
 
     if not args.dry_run:
