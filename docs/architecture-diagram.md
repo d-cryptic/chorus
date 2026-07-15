@@ -48,7 +48,7 @@ flowchart TB
 ## What this actually is (claims you can defend)
 
 - **Suggest-only.** No X write path exists. The agent drafts; you post. Zero ban risk.
-- **~$0.15/day.** twitterapi.io reads + DeepSeek drafting, hard-gated by a per-call budget
+- **~$0.15/day.** read-provider reads + DeepSeek drafting, hard-gated by a per-call budget
   check and a kill-switch.
 - **The growth thesis is cadence.** Replying 8-21h late earns ~0 impressions. The fast lane
   polls 24 anchors every 10 min and only surfaces tweets <120m old with <60 replies —

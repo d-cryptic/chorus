@@ -149,3 +149,18 @@ test("runway is measured, not a magic number", async ({ page }) => {
   await expect(page.getByText(/12\.4k\/day/)).toBeVisible();       // the measured rate, shown
   await expect(page.getByText(/~79d runway/)).toBeVisible();       // 981000 / 12400
 });
+
+test("the read provider is never named in the bundle — it comes from config", async ({ page }) => {
+  await page.goto("/");
+  // This repo is PUBLIC. Hardcoding the provider compiled the name of a third-party X
+  // scraper into a committed bundle — the exact exposure a suggest-only, zero-ban-risk
+  // design exists to avoid. Vendor identity is config (PROVIDER_NAME wrangler var), served
+  // at runtime via /api/status. Stale hashed bundles kept the old name alive for weeks after
+  // the source stopped saying it, which is why `prebuild` now clears assets/.
+  const src = await page.evaluate(async () => {
+    const s = document.querySelector("script[src]") as HTMLScriptElement;
+    return s ? await (await fetch(s.src)).text() : "";
+  });
+  expect(src.length).toBeGreaterThan(1000);
+  expect(src).not.toContain("twitterapi");
+});

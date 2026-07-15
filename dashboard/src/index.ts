@@ -7,6 +7,8 @@
 import { jwtVerify, createRemoteJWKSet } from "jose";
 
 export interface Env {
+  PROVIDER_NAME?: string;
+  PROVIDER_URL?: string;
   DB: D1Database;
   ASSETS: Fetcher;
   ALLOWED_EMAIL: string;
@@ -123,7 +125,10 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
         // a top-up makes `burned` negative; that is not a burn rate, it is new money
         if (days > 0.02 && burned > 0) creditsPerDay = Math.round(burned / days);
       }
-      return json({ lastRun: row ?? null, alerts, creditsPerDay });
+      // Vendor identity is config: PROVIDER_NAME/PROVIDER_URL are wrangler vars, so the
+      // public repo never names the read provider.
+      const provider = env.PROVIDER_NAME ? { name: env.PROVIDER_NAME, url: env.PROVIDER_URL } : null;
+      return json({ lastRun: row ?? null, alerts, creditsPerDay, provider });
     }
     // Human control surface for the safety switches. Without this the kill-switch is
     // only reachable via raw SQL, which makes it useless in the moment you need it.

@@ -108,7 +108,7 @@ Supermemory-API-compatible store (stdlib + SQLite, localhost-only) implementing 
 
 ## Cost model (measured, 2026-07-14)
 
-twitterapi.io: **100,000 credits = $1.00**. A tweet costs **$0.00015 = 15 credits**;
+The read provider: **100,000 credits = $1.00**. A tweet costs **$0.00015 = 15 credits**;
 minimum **15 credits per request**. So:
 
 | source | queries/cycle | credits/cycle | $/month (1 cycle/day) |
@@ -117,7 +117,7 @@ minimum **15 credits per request**. So:
 | **timeline(120) + targets** (default) | 10 | ~2,310 | **$0.69** |
 | full following (400) | 34 | ~7,710 | $2.31 |
 
-The X official API is ~**33x more** ($0.005/read = $5/1k vs $0.15/1k), so twitterapi.io
+The X official API is ~**33x more** ($0.005/read = $5/1k vs $0.15/1k), so the read provider
 is already the cheap lane; there is no cheaper credible source to switch to.
 
 **The ceiling was watching the wrong meter.** `settings.daily_ceiling_usd` counts our own

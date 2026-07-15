@@ -19,23 +19,15 @@ from ranker import _req
 
 
 def my_followers():
-    """Your live follower count via the read adapter (public data)."""
+    """Your live follower count, via the read adapter.
+
+    The provider call lives in candidate_source (git-ignored, box-only) ON PURPOSE: this repo
+    is PUBLIC and the standing instruction is to keep the read-provider integration out of it.
+    This file owns the LOGIC (snapshot, attribution); the adapter owns the vendor.
+    """
     import candidate_source as cs
-    key = os.environ.get("CANDIDATE_API_KEY", "")
     handle = os.environ.get("CHORUS_HANDLE", "barundebnath")
-    try:
-        import urllib.request, urllib.parse
-        r = urllib.request.Request(
-            "https://api.twitterapi.io/twitter/user/info?userName=" + urllib.parse.quote(handle))
-        r.add_header("X-API-Key", key); r.add_header("user-agent", "chorus-box/1.0")
-        d = json.loads(urllib.request.urlopen(r, timeout=15).read())
-        u = d.get("data") or d
-        for k in ("followers", "followersCount", "followers_count"):
-            if isinstance(u.get(k), int):
-                return u[k]
-    except Exception as e:
-        print(f"  follower fetch failed: {repr(e)[:50]}")
-    return None
+    return cs.user_followers(handle)
 
 
 def main():

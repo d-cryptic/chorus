@@ -38,6 +38,8 @@ export default function App() {
   const [credits, setCredits] = useState<number | null>(null);
   // measured from run_log balances, not a magic constant that was ~50x optimistic
   const [burn, setBurn] = useState<number | null>(null);
+  // vendor identity is CONFIG, not code — see /api/status
+  const [provider, setProvider] = useState<{ name: string; url?: string } | null>(null);
   const [beat, setBeat] = useState("");
   const [alerts, setAlerts] = useState<any[]>([]);
   const [cfg, setCfg] = useState<any>(null);
@@ -73,7 +75,7 @@ export default function App() {
     ]);
     setItems(sg.suggestions || []); setCounts(sg.counts || {});
     setSpend(Number(sp.total) || 0); setCfg(cf.settings || null);
-    setAlerts(st.alerts || []); setCredits(st.lastRun?.credits ?? null); setBurn(st.creditsPerDay ?? null);
+    setAlerts(st.alerts || []); setCredits(st.lastRun?.credits ?? null); setBurn(st.creditsPerDay ?? null); setProvider(st.provider ?? null);
     const r = st.lastRun;
     setBeat(r?.started_at ? `${Math.round((Date.now() - r.started_at) / 3.6e6)}h ago · ${r.suggested ?? 0}` : "no cycle yet");
     setCursor(0); setLoading(false);
@@ -245,8 +247,12 @@ export default function App() {
     : cfg?.paused ? { tone: "var(--warning)", title: "Paused — cycles stopped (resumable)", cta: "Resume", act: () => setSetting({ paused: 0 }) }
     // key off the CURRENT balance, not a historical error row
     : credits !== null && credits <= 0
+      // The vendor name/URL arrive from /api/status at RUNTIME. Hardcoding them compiled the
+      // name of a third-party X scraper into a bundle committed to a PUBLIC repo — the exact
+      // exposure a suggest-only, zero-ban-risk design exists to avoid.
       ? { tone: "var(--destructive)", title: "Provider credits exhausted",
-          cta: "Top up twitterapi.io (100k = $1)", href: "https://twitterapi.io" }
+          cta: provider ? `Top up ${provider.name} (100k = $1)` : "Top up your read provider",
+          href: provider?.url }
     : null;
 
   return (

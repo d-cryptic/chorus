@@ -622,8 +622,13 @@ def run(args):
             except Exception:
                 pass
             if bal <= 0:
+                # The vendor NAME comes from env, never source: this repo is PUBLIC and the
+                # standing instruction is to keep the read-provider out of it. Naming a
+                # third-party X scraper in public is exactly the attention a suggest-only,
+                # zero-ban-risk design exists to avoid. box/.env is git-ignored.
+                who = os.environ.get("CHORUS_PROVIDER_NAME", "your read provider")
                 _alert(f"Chorus STOPPED: provider credits exhausted ({bal}). "
-                       f"Top up twitterapi.io - 100k credits = $1. Nothing will run until then.")
+                       f"Top up {who} - 100k credits = $1. Nothing will run until then.")
                 run_log(base, token, id=rid, suggested=0, error="no_credits", credits=bal)
                 return
             if bal < need:

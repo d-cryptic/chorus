@@ -225,7 +225,7 @@ if a pattern fights the voice, the pattern is dropped.
 
 ## Source model: your timeline + targets
 
-twitterapi.io is **X-API-Key only with no home-timeline endpoint**, so the timeline is
+The read provider is **X-API-Key only with no home-timeline endpoint**, so the timeline is
 **reconstructed** from your following list (`refresh_targets` emits a capped, filtered
 `timeline` handle list). Same tweets, minus X's ranking — and no account session, which
 this project forbids. Topic-discovery is **opt-in** (`CHORUS_DISCOVERY=1`): live testing
