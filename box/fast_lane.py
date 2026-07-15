@@ -79,13 +79,17 @@ def main():
     pillars = [p.strip() for p in os.environ.get("CHORUS_PILLARS", "").split(",") if p.strip()]
     now = int(time.time() * 1000)
 
-    # A find is only worth money if you can reply inside the window. Measured anchor
-    # posting by hour (IST): 01:00-07:59 carries 40% of posts but is unreachable — you are
-    # asleep, and a 4h-old reply earns ~0. Skip most of those polls; keep 1-in-3 so the
-    # 07:00 tail and any early rise still get caught.
-    hr = time.localtime().tm_hour
+    # A find is only worth money if YOU can reply inside the window. Measured anchor posting
+    # by hour (IST): 01:00-07:59 carries 40% of posts but is unreachable — you are asleep and
+    # a 4h-old reply earns ~0. Skip most of those; keep 1-in-3 for the 07:00 tail.
+    #
+    # MUST use the USER's timezone, never the box's. The box runs UTC, so time.localtime()
+    # made "quiet 01:00-07:59" mean 06:30-13:29 IST — it skipped the user's MORNING and
+    # polled while they slept. Exactly inverted. CHORUS_TZ_OFFSET_H is the user's UTC offset.
+    tz_off = float(os.environ.get("CHORUS_TZ_OFFSET_H", "5.5"))   # IST
+    hr = time.gmtime(time.time() + tz_off * 3600).tm_hour
     if not args.dry_run and 1 <= hr <= 7 and (int(time.time()) // 600) % 3 != 0:
-        print(f"quiet window ({hr:02d}:00 local) — skipping poll (you cannot reply in time)")
+        print(f"quiet window ({hr:02d}:00 your time) — skipping poll (you cannot reply in time)")
         return
 
     if args.dry_run:

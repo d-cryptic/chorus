@@ -448,3 +448,22 @@ the judge grades `distinct` against the ROOM rather than just the tweet.
 ("Yes you can!!!"), and the blind draft was arguably punchier. The mechanism is sound and
 cheap, and it should matter most where the room has real takes to avoid, but no win is
 claimed from one sample.
+
+## Timezone is the growth ceiling (measured, corrected)
+
+Anchor reachability from IST, measured with the USER's clock:
+
+| anchor | posts landing in your 09:00–23:59 |
+|---|---|
+| **@collision** | **90%** |
+| @theo | **25%** |
+| @tom_doerr | **20%** |
+
+Your US-clocked anchors are only ~20–25% reachable — a ~25min reply window is physically
+impossible for the other 75%. **@collision is worth ~4x a @theo for your clock.** The
+highest-leverage growth action available is adding more IST/EU anchors; no code fixes a
+timezone.
+
+`CHORUS_TZ_OFFSET_H` (default 5.5) is the user's UTC offset and MUST be used for every
+"is he awake?" decision. The box runs UTC: `time.localtime()` there made the quiet window
+mean 06:30–13:29 IST, i.e. it skipped the morning and polled the sleep. Exactly inverted.

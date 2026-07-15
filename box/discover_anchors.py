@@ -20,15 +20,18 @@ import os, json, time, argparse, collections
 AWAKE = range(9, 24)   # 09:00-23:59 local — when a 25min window is actually actionable
 
 
-def clock_overlap(tweets, tz_offset_h=0.0):
-    """Share of an account's posts that land while the user is awake."""
+def clock_overlap(tweets, tz_offset_h=None):
+    """Share of an account's posts that land while the USER is awake.
+
+    Must use the user's timezone, not the box's (the box is UTC). Getting this wrong is how
+    fast_lane ended up skipping the user's morning and polling their sleep.
+    """
     if not tweets:
         return 0.0
-    hits = 0
-    for t in tweets:
-        lt = time.localtime(t["ts"] / 1000)
-        if lt.tm_hour in AWAKE:
-            hits += 1
+    if tz_offset_h is None:
+        tz_offset_h = float(os.environ.get("CHORUS_TZ_OFFSET_H", "5.5"))
+    hits = sum(1 for t in tweets
+               if time.gmtime(t["ts"] / 1000 + tz_offset_h * 3600).tm_hour in AWAKE)
     return round(hits / len(tweets), 3)
 
 
