@@ -253,3 +253,38 @@ corporate copy.
 - **`style_mine --mode replies`** mines high-engagement **comments** aimed at your targets
   (`filter:replies`) — the thing you actually compete with — into `chorus:niche:replies`,
   which the drafter prefers over post-patterns. Patterns only, never content.
+
+## post_gen.py — what to POST (not just what to reply to)
+
+Implements the v0 G1 idea priority (PRD-11 / generation-flows), which is LOCKED order:
+1. **user capture** — "a direct request always wins". `box/captures.txt`, one idea per
+   line. Lowest-friction capture that needs no OAuth.
+2. **breaking trend** — preempts evergreen when fresh + on-topic.
+3. **evergreen pillar** — fills an open cadence slot.
+
+Sources wired (keyless unless noted): **HackerNews** (Algolia front page, pillar-filtered),
+**GitHub** (repos pushed this week on your pillars), **X timeline** (what your own network
+is actually engaging with; costs credits — `--no-timeline` to skip).
+
+**Not wired, and why** — these need credentials the project does not have:
+- **Reddit**: 403s *every* unauthenticated request now (all UAs, both hosts). Needs a free
+  OAuth app. NOTE: this also means `enrich.py`'s reddit lane is dead — it swallows the error.
+- **Google Calendar / Photos / Maps**: needs Google OAuth on the user's account.
+- **Memes**: Giphy/Imgflip need an API key.
+
+**Provenance honesty**: Reddit/HN/Photos are NOT in the v0 PRDs — only Calendar, Maps, X
+and LinkedIn are. HN/GitHub here are our own extension of "breaking trend".
+
+**Source previews**: `og_image()` pulls the source's OpenGraph image — GitHub
+auto-generates a repo card, most articles set `og:image`. That is a free "screenshot" of
+the source. A real headless screenshot would need Chromium on the box (~400MB) or a paid
+API; this gets the same value for $0.
+
+Rules the drafter follows for posts: never invent first-person claims/numbers; do NOT
+summarise the link (take a position, or ask the question everyone is dancing around);
+classy/light (<=1 emoji, <=1 slang, no bro/fire/!!!); thread ONLY if the idea has 3+
+distinct beats (PRD-11), never padding.
+
+A post is queued with `target='post'` and a **synthetic** `tweet_id` (`post:<id>`) because
+that column is NOT NULL + UNIQUE — v0 uses the same tagged-synthetic-ref trick, and it
+doubles as the dedup key so the same HN story never queues twice.

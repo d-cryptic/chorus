@@ -38,3 +38,7 @@ infra/cmo-agent/.deploy_token
 dashboard/web/node_modules/
 dashboard/web/.vite/
 infra/cmo-agent/.ssh_service_token
+dashboard/web/e2e/*.png
+dashboard/web/test-results/
+dashboard/web/playwright-report/
+box/captures.txt

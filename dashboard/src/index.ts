@@ -70,6 +70,7 @@ export default {
 async function human(req: Request, env: Env, url: URL): Promise<Response> {
   try {
     if (req.method === "GET" && url.pathname === "/api/suggestions") {
+      const tgt = url.searchParams.get("target");   // e.g. ?target=post for the Posts tab
       const status = url.searchParams.get("status") ?? "queued";
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 50) || 50, 200);
       const now = Date.now();
@@ -77,13 +78,19 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
         `SELECT * FROM suggestion
            WHERE (status = ?1 OR (status='snoozed' AND snooze_until IS NOT NULL AND snooze_until <= ?2))
              AND (expires_at IS NULL OR expires_at > ?2)
+             AND (?4 IS NULL OR target = ?4)
            ORDER BY score DESC LIMIT ?3`
-      ).bind(status, now, limit).all();
+      ).bind(status, now, limit, tgt).all();
       const { results: cRows } = await env.DB.prepare(
         "SELECT status, COUNT(*) n FROM suggestion GROUP BY status"
       ).all<{ status: string; n: number }>();
       const counts: Record<string, number> = {};
       for (const r of cRows) counts[r.status] = r.n;
+      // the Posts tab needs its own count (queued originals), not a status count
+      const pc = await env.DB.prepare(
+        "SELECT COUNT(*) n FROM suggestion WHERE status='queued' AND target='post'"
+      ).first<{ n: number }>();
+      counts.posts = pc?.n ?? 0;
       return json({ suggestions: results, counts });
     }
     if (req.method === "GET" && url.pathname === "/api/spend") return json(await spendToday(env));

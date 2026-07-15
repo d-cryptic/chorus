@@ -60,7 +60,7 @@ export default function App() {
       setInsights({ ...rv, ...ins }); setLoading(false); return;
     }
     const [sg, sp, st, cf] = await Promise.all([
-      api(`/api/suggestions?status=${status}`),
+      api(`/api/suggestions?status=${status === "posts" ? "queued&target=post" : status}`),
       api(`/api/spend`).catch(() => ({ total: 0 })),
       api(`/api/status`).catch(() => ({})),
       api(`/api/settings`).catch(() => ({ settings: null })),
@@ -103,7 +103,9 @@ export default function App() {
   const draftsOf = (s: Sug) => parse(s.drafts, []) as string[];
   const selected = (s: Sug) => draftsOf(s)[pick[s.id] ?? 0] ?? "";
   const intent = (s: Sug, text: string) =>
-    `https://x.com/intent/post?text=${encodeURIComponent(text)}${s.tweet_id ? `&in_reply_to=${encodeURIComponent(s.tweet_id)}` : ""}`;
+    // a post is standalone: never attach in_reply_to, even if a source ref exists
+    `https://x.com/intent/post?text=${encodeURIComponent(text)}` +
+    (s.target !== "post" && s.tweet_id ? `&in_reply_to=${encodeURIComponent(s.tweet_id)}` : "");
   const postOnX = (s: Sug) => {
     const t = selected(s);
     window.open(s.target === "retweet" && s.tweet_id
@@ -204,7 +206,7 @@ export default function App() {
 
         <Tabs value={status} onValueChange={setStatus}>
           <TabsList>
-            {["queued", "posted", "dismissed", "insights"].map((t) => (
+            {["queued", "posts", "posted", "dismissed", "insights"].map((t) => (
               <TabsTrigger key={t} value={t}>
                 {t}{counts[t] ? <span className="ml-1 font-mono opacity-60">{counts[t]}</span> : null}
               </TabsTrigger>
@@ -266,6 +268,7 @@ function Card({ s, focused, onFocus, pick, setPick, editing, setEditing, dismiss
   useEffect(() => { if (focused) ref.current?.scrollIntoView({ block: "nearest" }); }, [focused]);
   useEffect(() => { setText(body); }, [body]);
   const isRT = s.target === "retweet";
+  const isPost = s.target === "post";
 
   return (
     <div ref={ref} onClick={onFocus}
@@ -286,9 +289,23 @@ function Card({ s, focused, onFocus, pick, setPick, editing, setEditing, dismiss
         </p>
       )}
 
-      <Tweet handle={s.author_handle} text={s.tweet_text} ts={s.created_at}>
-        <MediaGrid media={parse(s.media, [])} />
-      </Tweet>
+      {isPost ? (
+        // An original post has no parent tweet. Show WHERE the idea came from, plainly.
+        <a href={url || "#"} target="_blank" rel="noreferrer"
+           className="mx-4 my-2 flex items-start gap-2 rounded-lg px-3 py-2 text-[13px] no-underline hover:bg-[#101010]"
+           style={{ border: `1px dashed ${LINE}` }}>
+          <span className="font-mono font-bold shrink-0" style={{ color: DIM }}>
+            {String(s.author_handle || "idea").toUpperCase()}
+          </span>
+          <span className="min-w-0" style={{ color: "#e7e9ea" }}>
+            {String(s.tweet_text || "").replace(/^\[[^\]]+\]\s*/, "")}
+          </span>
+        </a>
+      ) : (
+        <Tweet handle={s.author_handle} text={s.tweet_text} ts={s.created_at}>
+          <MediaGrid media={parse(s.media, [])} />
+        </Tweet>
+      )}
 
       {!isRT && (
         <div style={{ borderTop: `1px solid ${LINE}` }}>
@@ -307,8 +324,8 @@ function Card({ s, focused, onFocus, pick, setPick, editing, setEditing, dismiss
             </div>
           ) : (
             <>
-              <Tweet handle={ME} text={body} replyingTo={s.author_handle} ts={Date.now()}
-                     connector={thread.length > 0}>
+              <Tweet handle={ME} text={body} replyingTo={isPost ? undefined : s.author_handle}
+                     ts={Date.now()} connector={thread.length > 0}>
                 {s.gif && <GifChip q={s.gif} />}
                 <div className="mt-2"><Counter text={body} /></div>
               </Tweet>
@@ -353,7 +370,7 @@ function Card({ s, focused, onFocus, pick, setPick, editing, setEditing, dismiss
         <div className="px-4 py-3 flex flex-wrap gap-2" style={{ borderTop: `1px solid ${LINE}` }}>
           <button onClick={() => postOnX(s)} className="rounded-full px-4 py-1.5 text-[14px] font-bold"
                   style={{ background: X_BLUE, color: "#fff" }}>
-            {isRT ? "Retweet on X" : "Post on X"} <span className="opacity-60">(p)</span>
+            {isRT ? "Retweet on X" : isPost ? "Post this" : "Post on X"} <span className="opacity-60">(p)</span>
           </button>
           {!isRT && <button onClick={() => setEditing(true)} className="rounded-full px-4 py-1.5 text-[14px] font-bold hover:bg-[#181818]"
                     style={{ border: `1px solid #536471`, color: "#e7e9ea" }}>Edit (e)</button>}

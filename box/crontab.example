@@ -22,3 +22,4 @@
 0 0 * * 0  cd /opt/chorus/box && python3 refresh_targets.py >> /var/log/chorus.log 2>&1
 0 5 * * *   /opt/chorus/box/run.sh python3 insights.py        >> /var/log/chorus.log 2>&1  # L1 analytics + change-gated L3 playbook
 0 3 * * 1   /opt/chorus/box/run.sh python3 style_mine.py      >> /var/log/chorus.log 2>&1  # weekly: what earns replies in your niche
+0 8 * * *   /opt/chorus/box/run.sh python3 post_gen.py        >> /var/log/chorus.log 2>&1  # what to POST (captures > trends > evergreen)
