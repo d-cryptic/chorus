@@ -428,7 +428,21 @@ def link_context(text, *, timeout=6, cap=600):
 _WARNED: set = set()
 
 
+# A dead network is a degradation. A NameError is a BUG WEARING A DEGRADATION'S CLOTHES.
+# already_said announced "REPETITION GUARD IS OFF" for weeks over an undefined variable;
+# the message was indistinguishable from Supermemory being down, so it read as expected
+# noise. These types are never the network's fault -- they mean Chorus is broken.
+_BUG_TYPES = (NameError, UnboundLocalError, AttributeError, TypeError)
+
+
 def _degraded(site: str, exc: Exception) -> None:
+    if isinstance(exc, _BUG_TYPES):
+        # Deliberately bypasses the warn-once budget: a bug is not noise to be rate-limited,
+        # and letting it latch _WARNED would silence the REAL degradation warning for this
+        # site (which is exactly what happened). Loud every single time.
+        print(f"  BUG in {site}: {type(exc).__name__}: {exc} — this is NOT a degradation, "
+              f"the code is broken. Fix it; do not read past it.")
+        return
     if site in _WARNED:
         return
     _WARNED.add(site)
