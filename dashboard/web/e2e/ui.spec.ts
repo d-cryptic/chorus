@@ -162,5 +162,17 @@ test("the read provider is never named in the bundle — it comes from config", 
     return s ? await (await fetch(s.src)).text() : "";
   });
   expect(src.length).toBeGreaterThan(1000);
-  expect(src).not.toContain("twitterapi");
+
+  // Read the forbidden name from config rather than spelling it out: hardcoding it here
+  // would make this very test the last place a PUBLIC repo names the provider — the test
+  // would leak the thing it exists to protect. It also makes the check STRONGER: it now
+  // tests whatever provider is actually configured, not one I remembered to hardcode.
+  const forbidden = process.env.PROVIDER_NAME;
+  if (forbidden) {
+    expect(src).not.toContain(forbidden);
+    expect(src).not.toContain(forbidden.split(".")[0]);   // bare name, not just the FQDN
+  }
+  // Belt and braces with no name in the file: the bundle must not embed ANY third-party
+  // API host. Our own worker is same-origin, so a hardcoded external api.* host is a smell.
+  expect(src).not.toMatch(/https:\/\/api\.[a-z0-9-]+\.(io|com)\/twitter/i);
 });
