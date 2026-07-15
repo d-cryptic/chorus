@@ -404,7 +404,9 @@ def niche_context():
     key = os.environ.get("SUPERMEMORY_API_KEY", "")
     try:
         chunks = []
-        for tag in ("chorus:niche:replies", "chorus:niche"):  # comments first: we write replies
+        # contrast last but included: it is the only one that says what YOU do differently
+        # from what lands. Stored by style_mine and, until now, never read by anything.
+        for tag in ("chorus:niche:replies", "chorus:niche", "chorus:niche:contrast"):
             out = _req(f"{base}/v3/search", "POST", key or None,
                        {"q": _sm_q(""), "containerTags": [tag]}, timeout=8)
             r = _sm_texts(out, 600)

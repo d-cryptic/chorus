@@ -12,7 +12,7 @@ the aggregate actually MOVED (change-gating), so a quiet week costs nothing.
 Pure core (no network) so it is unit-testable; ranker/cron own the I/O.
 """
 from __future__ import annotations
-import math
+import os, json, math
 
 MIN_SAMPLE = 5      # below this we refuse to make a claim (v0: min-sample guard)
 PRIOR_K = 10        # shrinkage strength: est = (n*mean + k*prior)/(n+k)
@@ -139,6 +139,42 @@ def apply_decay(stored, *, now_ms: int, floor: float = 0.05) -> list:
     return out
 
 
+
+def shape_of(r) -> str:
+    """post | thread | longform, from a feedback row.
+
+    The shape lives on the suggestion (thread JSON array / longform text), not on the
+    feedback row itself, so /api/box/feedback must select s.thread and s.longform or this
+    silently reports "post" for everything and the whole correlation is a lie.
+    """
+    lf = r.get("longform")
+    if lf and str(lf).strip():
+        return "longform"
+    th = r.get("thread")
+    if isinstance(th, str):
+        try:
+            th = json.loads(th or "[]")
+        except Exception:
+            th = []
+    if th:
+        return "thread"
+    return "post"
+
+
+def follower_delta(r):
+    """Followers gained while this was live. None when unmeasured -- NOT 0.
+
+    Conflating "unmeasured" with "gained nothing" would drag every average toward zero and
+    make whichever shape is newest look worst, purely because it has less outcome data.
+    """
+    v = r.get("followers_delta")
+    if v is None:
+        v = (r.get("outcome") or {}).get("followers_delta") if isinstance(r.get("outcome"), dict) else None
+    try:
+        return None if v is None else int(v)
+    except (TypeError, ValueError):
+        return None
+
 def build_insights(rows, *, now_ms: int) -> list:
     """L1: rows (feedback+outcome) -> typed insight dicts. No LLM, no network, $0."""
     n = len(rows)
@@ -156,6 +192,41 @@ def build_insights(rows, *, now_ms: int) -> list:
         "evidence": [f"pillar:{x['key']} {x['posted']}/{x['total']}" for x in ranked],
     })
 
+    # 1b. winning_shape — post vs thread vs longform. This is the question "winning_format"
+    # sounds like it answers but does not (it ranks PILLARS). Kept separate rather than
+    # renamed: `winning_format` is a stored insight kind, and silently changing what a kind
+    # means would corrupt every historical row.
+    by_shape = tally(rows, shape_of)
+    ranked_s = rank_buckets(by_shape)
+    shape_ev = [f"{x['key']} {x['posted']}/{x['total']} accepted" for x in ranked_s]
+    # ...and what each shape actually EARNED, where measured. Acceptance is the user's taste;
+    # followers are the goal. They are different questions and can disagree.
+    gained: dict = {}
+    for r in rows:
+        d = follower_delta(r)
+        if d is None or (r.get("action") or "") not in POSTED:
+            continue
+        gained.setdefault(shape_of(r), []).append(d)
+    per_shape = {k: {"n": len(v), "total_followers": sum(v),
+                     "mean": round(sum(v) / len(v), 3)} for k, v in gained.items() if v}
+    for k, v in sorted(per_shape.items(), key=lambda kv: -kv[1]["mean"]):
+        if v["n"] >= MIN_SAMPLE:
+            shape_ev.append(f"{k}: +{v['total_followers']} followers over {v['n']} posts")
+        else:
+            shape_ev.append(f"{k}: {v['n']} measured post(s) — below min-sample, no claim")
+    out.append(insufficient("winning_shape", n) if not ranked_s else {
+        "kind": "winning_shape", "scope": "user", "subject_id": "self",
+        "term": "short", "status": "active",
+        "confidence": max(x["confidence"] for x in ranked_s),
+        "payload": {"best_accepted": ranked_s[0]["key"], "ranked": ranked_s,
+                    "followers_by_shape": per_shape,
+                    # only name a follower winner once it clears MIN_SAMPLE
+                    "best_by_followers": next((k for k, v in sorted(
+                        per_shape.items(), key=lambda kv: -kv[1]["mean"])
+                        if v["n"] >= MIN_SAMPLE), None)},
+        "evidence": shape_ev,
+    })
+
     # 2. useful_account — whose tweets are actually worth replying to
     by_author = tally(rows, lambda r: r.get("author_handle"))
     ranked_a = rank_buckets(by_author)
@@ -168,12 +239,17 @@ def build_insights(rows, *, now_ms: int) -> list:
         "evidence": [f"@{x['key']} {x['posted']}/{x['total']}" for x in ranked_a[:20]],
     })
 
-    # 3. best_time — hour-of-day worth engaging (local hour from ts)
+    # 3. best_time — hour-of-day worth engaging, in the USER's clock.
+    # localtime() reads the BOX's timezone, and the box is UTC. That made every best_time
+    # insight off by the IST offset: "best_hour 14" meant 19:30 to the user, who would read
+    # it as 2pm and post at the wrong time. Same bug class that had fast_lane polling the
+    # user's sleep and skipping their morning. Never localtime() on this box.
     import time as _t
+    tz_off = float(os.environ.get("CHORUS_TZ_OFFSET_H", "5.5"))
 
     def _hour(r):
         ts = r.get("ts")
-        return _t.localtime(ts / 1000).tm_hour if ts else None
+        return _t.gmtime(ts / 1000 + tz_off * 3600).tm_hour if ts else None
 
     by_hour = tally(rows, _hour)
     ranked_h = rank_buckets(by_hour)

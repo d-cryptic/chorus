@@ -157,6 +157,120 @@ def main():
           "metadata": {"kind": f"niche_style_{args.mode}", "n_posts": len(posts), "ts": now}})
     print(f"  stored -> {tag}")
 
+    # ME vs THEM. We already have their winning posts in hand; fetch the user's own and
+    # contrast the STRUCTURE. Free: no LLM, so it cannot invent a difference that is not
+    # there (ask a model "how do these differ" and it will always answer something).
+    if args.mode == "posts":
+        try:
+            out = _req(f"{SM_BASE}/v3/search", "POST", key or None,
+                       {"q": "posted", "containerTags": ["chorus:posts"], "limit": 100})
+            mine_txt = []
+            for r in (out.get("results") or []):
+                t = r.get("content")
+                if not t:                       # upstream Supermemory returns chunks[], not content
+                    t = "\n".join(c.get("content", "") for c in (r.get("chunks") or []))
+                if t:
+                    mine_txt.append(t)
+            theirs_txt = [p.get("text") or "" for p in posts]
+            c = contrast(mine_txt, theirs_txt)
+            cdoc = contrast_doc(c)
+            print(f"  contrast: {cdoc[:200]}")
+            _req(f"{SM_BASE}/v3/documents?containerTags={TAG_CONTRAST}", "DELETE", key or None)
+            _req(SM_URL, "POST", key or None,
+                 {"content": cdoc, "containerTags": [TAG_CONTRAST],
+                  "metadata": {"kind": "niche_contrast", "n_mine": c.get("n_mine"),
+                               "n_theirs": c.get("n_theirs"), "ts": now}})
+            print(f"  stored -> {TAG_CONTRAST}")
+        except Exception as e:
+            print(f"  contrast skipped (non-fatal): {repr(e)[:60]}")
+
 
 if __name__ == "__main__":
     main()
+
+
+# ---- me vs them ------------------------------------------------------------
+
+TAG_CONTRAST = "chorus:niche:contrast"
+
+
+def features(text):
+    """Structural fingerprint of ONE post. Structure only, never content.
+
+    Deterministic and free: no LLM, so it cannot hallucinate a difference that is not there.
+    An LLM asked "how do these differ?" will always find something.
+    """
+    t = (text or "").strip()
+    if not t:
+        return None
+    lines = [l for l in t.split("\n") if l.strip()]
+    words = t.split()
+    first = lines[0] if lines else ""
+    return {
+        "chars": len(t),
+        "words": len(words),
+        "lines": len(lines),
+        "opens_question": first.strip().endswith("?"),
+        "ends_question": t.rstrip().endswith("?"),
+        "has_question": "?" in t,
+        "emoji": sum(1 for c in t if ord(c) > 0x2500),
+        "has_link": "http" in t,
+        "first_words": len(first.split()),
+        "lowercase_open": bool(first) and first[:1].islower(),
+    }
+
+
+def _mean(vals):
+    vals = [v for v in vals if v is not None]
+    return round(sum(vals) / len(vals), 2) if vals else None
+
+
+def contrast(mine, theirs, *, min_sample=5):
+    """Where YOUR structure diverges from what actually lands in your niche.
+
+    Returns {ok, n_mine, n_theirs, gaps: [...]} -- gaps are plain statements a drafter can
+    act on. Refuses below min_sample on EITHER side: a "gap" computed from 2 posts is noise,
+    and naming it would send the drafter chasing a coin flip.
+    """
+    fm = [f for f in (features(t) for t in mine) if f]
+    ft = [f for f in (features(t) for t in theirs) if f]
+    if len(fm) < min_sample or len(ft) < min_sample:
+        return {"ok": False, "n_mine": len(fm), "n_theirs": len(ft),
+                "why": f"need >={min_sample} on both sides (have {len(fm)} mine, {len(ft)} theirs)",
+                "gaps": []}
+    gaps = []
+    for key, label, kind in (
+        ("chars", "length", "num"),
+        ("lines", "line breaks", "num"),
+        ("first_words", "opening line length", "num"),
+        ("has_question", "posts containing a question", "rate"),
+        ("ends_question", "posts ENDING on a question (invites a reply)", "rate"),
+        ("emoji", "emoji per post", "num"),
+        ("lowercase_open", "lowercase openers", "rate"),
+    ):
+        a, b = _mean([f[key] for f in fm]), _mean([f[key] for f in ft])
+        if a is None or b is None:
+            continue
+        if kind == "rate":
+            a, b = round(a, 2), round(b, 2)
+            if abs(a - b) >= 0.25:                       # a quarter of posts apart
+                gaps.append({"feature": label, "mine": a, "theirs": b,
+                             "note": f"{label}: you {a:.0%}, they {b:.0%}"})
+        else:
+            if b and (a > b * 1.5 or a < b * 0.66):      # 50% apart either way
+                gaps.append({"feature": label, "mine": a, "theirs": b,
+                             "note": f"{label}: you {a}, they {b}"})
+    return {"ok": True, "n_mine": len(fm), "n_theirs": len(ft), "gaps": gaps}
+
+
+def contrast_doc(c) -> str:
+    """-> a chorus:niche:contrast memory doc the drafter reads. Honest when it knows nothing."""
+    if not c.get("ok"):
+        return f"contrast: not enough data yet ({c.get('why')}). No claims."
+    if not c["gaps"]:
+        return (f"contrast (n={c['n_mine']} yours vs {c['n_theirs']} theirs): no structural "
+                "gap worth acting on. Your shape already matches what lands here.")
+    lines = [f"contrast (n={c['n_mine']} yours vs {c['n_theirs']} theirs) - STRUCTURE ONLY, "
+             "never copy their content:"]
+    lines += [f"- {g['note']}" for g in c["gaps"]]
+    return "\n".join(lines)
