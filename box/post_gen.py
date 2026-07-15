@@ -486,7 +486,11 @@ def main():
         except Exception as e:
             _alert(f"post_gen aborted: cannot read budget ({repr(e)[:40]})"); return
         tracker = B.BudgetTracker(spent=spent, ceiling=ceiling, paused=paused, killed=killed,
-                                  quiet=quiet, hour_local=time.localtime().tm_hour)
+                                  # user's tz, not the box UTC clock (matches ranker/fast_lane).
+                                  # quiet-hours off the wrong clock would refuse posting during the
+                                  # user's WAKING hours -- exactly inverted -- once quiet_hours is set.
+                                  quiet=quiet,
+                                  hour_local=time.gmtime(time.time() + float(os.environ.get("CHORUS_TZ_OFFSET_H", "5.5")) * 3600).tm_hour)
         try:
             tracker.check("llm_draft", 1)
         except B.BudgetError as e:

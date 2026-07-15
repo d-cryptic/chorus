@@ -130,7 +130,7 @@ def main():
             msg = repr(e)[:40]
             _alert(f"fast-lane aborted: cannot read budget ({msg})"); return
         tracker = B.BudgetTracker(spent=spent, ceiling=ceiling, paused=paused, killed=killed,
-                                  quiet=quiet, hour_local=time.localtime().tm_hour)
+                                  quiet=quiet, hour_local=hr)  # hr = user's tz (line ~99), NOT the box UTC clock
         try:
             tracker.check("llm_draft", 1)
         except B.BudgetError as e:
