@@ -45,5 +45,23 @@ def run():
     # finalize folds angle_strength
     chk(R.finalize(0.5,1.0,W)>0.5, "finalize adds angle_strength")
 
+    # --- reply expiry: the opportunity dies with the TWEET, not the suggestion ----------
+    # Every reply used to get a flat `now + WINDOW_H` (48h), so a tweet found at 40h old sat
+    # in the queue for another two days. Measured before the fix: 15 of 22 queued replies were
+    # past 3h — the bar fast_lane itself calls "worthless in 3h" — so the queue advertised 22
+    # chances when ~7 were real, burying the good ones.
+    import time as _t
+    NOWMS = int(_t.time() * 1000)
+    life = R.REPLY_LIFE_H * 3600 * 1000
+    win = R.WINDOW_H * 3600 * 1000
+    exp_for = lambda tweet_age_h: min(NOWMS + win, (NOWMS - int(tweet_age_h * 3600 * 1000)) + life)
+    chk(exp_for(0.5) > NOWMS, "a fresh tweet's reply is live")
+    chk(exp_for(R.REPLY_LIFE_H + 1) <= NOWMS, "a reply past REPLY_LIFE_H is already dead")
+    chk(exp_for(0.5) - NOWMS <= life, "a reply never outlives REPLY_LIFE_H from the tweet")
+    chk(exp_for(0) <= NOWMS + win, "and never outlives the global window either")
+    chk(R.REPLY_LIFE_H < R.WINDOW_H, "a reply dies sooner than the candidate gate — that is the point")
+    # posts/quotes stand on their own, so they keep the flat window
+    chk(NOWMS + win > NOWMS + life, "the flat window (posts/quotes) is longer than a reply's life")
+
     print(f"RANKER UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())

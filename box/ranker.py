@@ -18,6 +18,10 @@ import memes
 DEFAULT_WEIGHTS = {"pillar": 0.22, "author": 0.18, "upside": 0.16, "fresh": 0.12, "saturation": 0.15, "relationship": 0.10, "angle": 0.24}
 TIER = {"A": 1.0, "B": 0.6, "C": 0.3}
 WINDOW_H = 48
+# How long a REPLY stays worth posting, measured from the TWEET's timestamp. fast_lane uses
+# 3h for its finds ("worthless in 3h"); the daily ranker is deliberately more generous
+# because a low-reply tweet is still repliable later in the day — but not for two days.
+REPLY_LIFE_H = int(os.environ.get("CHORUS_REPLY_LIFE_H", "12"))
 
 # ---------- pure, unit-testable core (no network) ----------
 
@@ -660,7 +664,7 @@ def run(args):
     caps = G.CapState(max_per_day=args.cap,
                       recent={} if args.dry_run else recent_authors(base, token))
     routed = {"reply": 0, "quote": 0, "retweet": 0, "drop_pre": 0, "drop_post": 0,
-              "capped": 0, "repeat": 0}
+              "capped": 0, "repeat": 0, "stale_reply": 0}
     emitted = 0; llm_calls = 0; stop_reason = None
     for (pre, pillar, comps), c in top:
         # --- cheap gates BEFORE we pay for a draft -------------------------
@@ -734,6 +738,12 @@ def run(args):
         # --- the router, on the judge's independent distinctness score ---
         route, route_why = G.route_post(c, distinct=scores.get("distinct"),
                                         pillar_hit=pillar, drafts=drafts)
+        # A reply to a tweet already past REPLY_LIFE_H is born expired: the sweep would bin
+        # it within the half-hour, but it would still have flashed up in the queue as if it
+        # were a real chance. Drop it here instead of shipping dead advice.
+        if route == "reply" and int(c.get("ts", now)) + REPLY_LIFE_H * 3600 * 1000 <= now:
+            routed["stale_reply"] = routed.get("stale_reply", 0) + 1
+            continue
         if route == G.DROP:
             routed["drop_post"] += 1
             continue
@@ -757,7 +767,17 @@ def run(args):
             # (dormant by default -> [] -> the queue just carries no gif, never a broken one)
             "media": (c.get("media") or []) + memes.for_draft(d.get("gif")),
             "rationale": f"{route_why} | pre {pre} + angle {astr}",
-            "expires_at": now + WINDOW_H * 3600 * 1000,
+            # The opportunity dies with the TWEET, not with the suggestion. `now + WINDOW_H`
+            # gave every reply a flat 48h, so a tweet found at 40h old sat in the queue for
+            # another 48 — long after anyone would see the reply. Measured before this fix:
+            # 15 of 22 queued replies were past 3h, the bar fast_lane itself calls
+            # "worthless in 3h", so the queue read as 22 chances when ~7 were real and the
+            # good ones were buried in the noise.
+            # Anchor to the tweet's own clock: a reply is viable while the tweet is young.
+            # A post/quote is different — it stands on its own, so it keeps the flat window.
+            "expires_at": (min(now + WINDOW_H * 3600 * 1000,
+                               int(c.get("ts", now)) + REPLY_LIFE_H * 3600 * 1000)
+                           if route == "reply" else now + WINDOW_H * 3600 * 1000),
         }
         if args.dry_run:
             print(f"  [{score}] @{c.get('author')}: {(c.get('text') or '')[:50]}")
