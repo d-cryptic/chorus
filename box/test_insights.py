@@ -115,6 +115,31 @@ def run():
             f"{kind}: placeholder shares scope/subject with the real claim (same id)")
     chk(empty["useful_account"]["scope"] == "network", "useful_account placeholder uses network scope")
 
+    # ---- regression: decay must actually be APPLIED, not just defined ----
+    DAY = 86_400_000
+    stored = [{"id": "x", "kind": "winning_format", "confidence": 0.55,
+               "created_at": NOW - 30 * DAY, "status": "active"},
+              {"id": "y", "kind": "best_time", "confidence": 0.9,
+               "created_at": NOW, "status": "active"}]
+    aged = {a["id"]: a for a in I.apply_decay(stored, now_ms=NOW)}
+    chk(aged["x"]["confidence"] < 0.2, "a 30d-old claim loses most of its confidence")
+    chk(aged["x"]["decayed_from"] == 0.55, "the original confidence is retained for audit")
+    chk(aged["y"]["confidence"] > 0.85, "a fresh claim is barely touched")
+    # 30d -> 0.1227, still ABOVE the 0.05 floor: faded but not dead, which is correct.
+    # rank_tune weights by confidence, so a 0.12 claim barely moves anything anyway.
+    chk(aged["x"]["status"] == "active", "30d: faded (0.12) but above floor -> still active")
+    chk(aged["y"]["status"] == "active", "fresh -> active")
+    chk(all("age_days" in a for a in aged.values()), "age is recorded so it is auditable")
+    # the floor bites at ~60d (e^-0.05*60 = 0.0498)
+    mid = I.apply_decay([{"id": "m", "confidence": 0.9, "created_at": NOW - 75 * DAY}], now_ms=NOW)
+    chk(mid[0]["status"] == "decayed", "~75d: crosses the floor -> decayed")
+    old = I.apply_decay([{"id": "z", "confidence": 0.9, "created_at": NOW - 365 * DAY}], now_ms=NOW)
+    chk(old[0]["status"] == "decayed", "a year-old claim is decayed")
+    # "evidence survives" means the ROW survives — confidence rounds to 0.0 at 4dp, which
+    # is fine; what matters is we never DELETE it, so the audit trail holds.
+    chk(len(old) == 1 and old[0]["decayed_from"] == 0.9,
+        "decayed rows are kept, not deleted, with their original confidence")
+
     print(f"INSIGHTS UNIT: {p} passed, {f} failed"); return f
 
 import sys; sys.exit(run())

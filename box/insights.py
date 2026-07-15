@@ -118,6 +118,27 @@ def insufficient(kind: str, n: int, need: int = MIN_SAMPLE, *,
     }
 
 
+def apply_decay(stored, *, now_ms: int, floor: float = 0.05) -> list:
+    """Age existing insights. v0's lifecycle is Derived->Active->Refreshed->Decayed->Archived,
+    but decay() was implemented, unit-tested, and never called — so a month-old claim kept
+    its birth confidence forever and rank_tune trusted it exactly as much as this morning's
+    (0.55 vs a decayed 0.12: 4.5x over-confident).
+
+    A claim the world has moved past should fade, not vanish: below `floor` it is marked
+    'decayed' rather than deleted, so the evidence survives for audit.
+    """
+    out = []
+    for i in stored:
+        created = i.get("created_at") or i.get("createdAt") or now_ms
+        age_d = max(0.0, (now_ms - created) / 86_400_000)
+        c0 = float(i.get("confidence") or 0)
+        c = decay(c0, age_d)
+        out.append({**i, "confidence": c,
+                    "status": "decayed" if c < floor else (i.get("status") or "active"),
+                    "decayed_from": c0, "age_days": round(age_d, 2)})
+    return out
+
+
 def build_insights(rows, *, now_ms: int) -> list:
     """L1: rows (feedback+outcome) -> typed insight dicts. No LLM, no network, $0."""
     n = len(rows)
@@ -294,6 +315,20 @@ def main():
     ins = build_insights(rows, now_ms=now)
     for i in ins:
         i["id"] = _id(i["kind"], i["scope"], str(i.get("subject_id")))
+
+    # Age anything we are NOT rewriting this run. A fresh claim supersedes its own id, so
+    # only untouched kinds need decaying — otherwise a stale claim outlives its evidence.
+    fresh_ids = {i["id"] for i in ins}
+    try:
+        stored = _req(f"{base}/api/box/insights", token=token).get("insights", [])
+        stale = [x for x in stored if x.get("id") not in fresh_ids]
+        aged = apply_decay(stale, now_ms=now)
+        faded = [a for a in aged if a["status"] == "decayed"]
+        if aged:
+            _req(f"{base}/api/box/insights", "POST", token, {"insights": aged})
+            print(f"  aged {len(aged)} untouched insight(s), {len(faded)} decayed out")
+    except Exception as e:
+        print(f"  decay pass skipped ({repr(e)[:40]})")
     fp = fingerprint(ins)
     claims = [i for i in ins if i["payload"].get("state") != "insufficient_data"
               and i["kind"] != "post"]

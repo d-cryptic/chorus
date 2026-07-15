@@ -29,12 +29,16 @@ def post_corpus_payload(f):
     """A reply you actually posted -> chorus:posts. This is the ONLY ground truth about
     how you really write (a draft you edited or dismissed is not). It powers voice RAG
     and the repetition guard."""
-    body = (f.get("final_text") or "").strip()
+    # posted_text = final_text if edited, else the draft actually picked (draft_index).
+    # Requiring final_text meant a plain "posted" recorded NOTHING — 7 of 8 real posts were
+    # invisible to the corpus, so voice RAG and the repetition guard had no ground truth.
+    body = (f.get("posted_text") or f.get("final_text") or "").strip()
     if not body or (f.get("action") or "") not in ("posted", "posted_edited"):
         return None
     return {"content": body, "containerTags": ["chorus:posts"],
             "metadata": {"kind": "posted_reply", "to": f.get("author_handle"),
-                         "edited": f.get("action") == "posted_edited", "ts": f.get("ts")}}
+                         "target": f.get("target"), "edited": f.get("action") == "posted_edited",
+                         "draft_index": f.get("draft_index"), "ts": f.get("ts")}}
 
 
 def run(args):

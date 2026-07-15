@@ -230,7 +230,13 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
     if (req.method === "GET" && p === "/api/box/feedback") {
       const since = Number(url.searchParams.get("since") ?? 0) || 0;
       const { results } = await env.DB.prepare(
-        "SELECT f.id, f.action, f.final_text, f.reason, f.ts, s.author_handle, s.angle, s.factors, o.likes, o.replies FROM feedback f JOIN suggestion s ON s.id=f.suggestion_id LEFT JOIN outcome o ON o.suggestion_id=s.id WHERE f.ts > ? ORDER BY f.ts LIMIT 500"
+        // posted_text = what was ACTUALLY sent. A plain "posted" has no final_text (only an
+      // edit does), so fall back to the draft the user actually picked via draft_index.
+      // Without this the corpus only ever captured EDITED posts — 1 of 8 — starving voice
+      // RAG and the repetition guard of the real ground truth.
+      "SELECT f.id, f.action, f.final_text, f.reason, f.ts, s.author_handle, s.angle, s.factors, s.drafts, s.draft_index, s.target, o.likes, o.replies, " +
+      "COALESCE(f.final_text, json_extract(s.drafts, '$[' || COALESCE(s.draft_index,0) || ']')) AS posted_text " +
+      "FROM feedback f JOIN suggestion s ON s.id=f.suggestion_id LEFT JOIN outcome o ON o.suggestion_id=s.id WHERE f.ts > ? ORDER BY f.ts LIMIT 500"
       ).bind(since).all();
       return json({ feedback: results });
     }
