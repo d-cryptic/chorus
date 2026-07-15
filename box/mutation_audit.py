@@ -29,6 +29,11 @@ MUTANTS = [
     # --dry-run was a hole straight through the breaker: fake $10 ceiling, real paid calls.
     ("post_gen.py", "if not args.no_budget:\n        flush_spend", "if False:\n        flush_spend",
      "BUDGET: dry-run spend goes unbooked again"),
+    # Silence is what hid three bugs in one day. If the voice pipeline degrades quietly again,
+    # the next person gets generic drafts and no idea why.
+    ("ranker.py", "def _degraded(site: str, exc: Exception) -> None:\n    if site in _WARNED:",
+     "def _degraded(site: str, exc: Exception) -> None:\n    return\n    if site in _WARNED:",
+     "SILENCE: voice pipeline degrades without saying so"),
     ("ranker.py", "def get_voice(fallback):",
      'def _autopost(t, k):\n    return _req("https://api.x.com/2/tweets", "POST", k, {"text": t})\n\n\ndef get_voice(fallback):',
      "SUGGEST-ONLY: a real write lane added"),

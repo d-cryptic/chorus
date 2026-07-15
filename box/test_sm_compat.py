@@ -86,5 +86,26 @@ def run():
         R._req = real_req
         if hasattr(R, "_sm_hits_orig"): R._sm_hits = R._sm_hits_orig
 
+    # --- best-effort must not mean SILENT ------------------------------------------------
+    # get_voice / niche_context / already_said all swallow broadly on purpose: memory being
+    # down must never block a cycle. That silence hid THREE real bugs in a single day —
+    # the learned voice was never read (the env string was used instead), niche_context 400'd
+    # on an empty query, and already_said compared cosine against a BM25 tau so the repetition
+    # guard never fired. Each looked exactly like "nothing to say".
+    real_req2 = R._req
+    R._req = lambda *a, **k: (_ for _ in ()).throw(ConnectionError("refused"))
+    R._WARNED.clear()
+    try:
+        chk(R.get_voice("ENV_FALLBACK") == "ENV_FALLBACK", "get_voice still falls back safely")
+        chk(R.niche_context() == "", "niche_context still returns empty safely")
+        chk(R.already_said("x") is None, "already_said still returns None safely")
+        chk(len(R._WARNED) == 3, f"...but ALL THREE now SAY they degraded (got {len(R._WARNED)})")
+        n_before = len(R._WARNED)
+        R.get_voice("f"); R.get_voice("f")
+        chk(len(R._WARNED) == n_before, "warns ONCE per site: per-candidate spam is just silence with extra steps")
+    finally:
+        R._req = real_req2
+        R._WARNED.clear()
+
     print(f"SM COMPAT UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())

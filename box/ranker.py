@@ -388,6 +388,25 @@ def link_context(text, *, timeout=6, cap=600):
     return out
 
 
+
+# Best-effort is not the same as silent. get_voice/niche_context/already_said all swallow
+# broadly on purpose — memory being down must never block a cycle — but that silence is
+# exactly what hid THREE real bugs in one day: the learned voice was never read (env string
+# used instead), niche_context 400'd on an empty query, and already_said compared a cosine
+# score against a BM25 threshold so the repetition guard never fired. Each looked like
+# "nothing to say" and degraded quietly for weeks.
+# Warn ONCE per process per site: these run per-candidate, so logging every failure would be
+# noise nobody reads, and noise nobody reads is just silence with extra steps.
+_WARNED: set = set()
+
+
+def _degraded(site: str, exc: Exception) -> None:
+    if site in _WARNED:
+        return
+    _WARNED.add(site)
+    print(f"  WARN {site} unavailable ({repr(exc)[:60]}) - degrading. "
+          f"This is silent by design; if drafts look generic, start here.")
+
 def get_voice(fallback):
     """The voice the drafter should imitate.
 
@@ -404,8 +423,8 @@ def get_voice(fallback):
         for content, _sc, _sem in _sm_hits(out):
             if content.lower().startswith("voice"):
                 return content[:900]
-    except Exception:
-        pass
+    except Exception as e:
+        _degraded("get_voice (learned voice unread -> falling back to the CHORUS_VOICE env string)", e)
     return fallback
 
 
@@ -429,7 +448,8 @@ def niche_context():
             if r:
                 chunks.append(r[0])
         return "\n".join(chunks)
-    except Exception:
+    except Exception as e:
+        _degraded("niche_context (drafting with no niche/taste patterns)", e)
         return ""
 
 
@@ -510,8 +530,10 @@ def already_said(text, *, threshold=None):
             return content[:120], sc
         if sc >= threshold * 0.7:   # near-miss: surface it so the tau can be tuned
             print(f"  (repeat near-miss {sc:.2f} < tau {threshold}: {r[0].get('content','')[:44]!r})")
-    except Exception:
-        pass   # memory down must never block a cycle
+    except Exception as e:
+        # memory down must never block a cycle, but a dead repetition guard means Chorus
+        # starts repeating itself in public. Say so.
+        _degraded("already_said (REPETITION GUARD IS OFF - drafts may repeat)", e)
     return None
 
 
