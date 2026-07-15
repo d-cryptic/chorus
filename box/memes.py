@@ -16,7 +16,7 @@ With no key, every function returns [] / None and the caller degrades quietly â€
 simply carries no meme, rather than a broken image. Nothing here fabricates media.
 """
 from __future__ import annotations
-import os, json, urllib.parse, urllib.request
+import os, time, json, urllib.parse, urllib.request
 
 UA = "chorus/1.0"
 
@@ -41,9 +41,43 @@ def available() -> dict:
 
 # ---- giphy: SEARCH a reaction gif (never generate) --------------------------
 
+_GIPHY_LOG = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".giphy_calls")
+_GIPHY_MAX_PER_HOUR = int(os.environ.get("GIPHY_MAX_PER_HOUR", "100"))
+_GIPHY_WARNED = False
+
+
+def _giphy_ratelimit_ok():
+    """True if we are under the 100-calls/hour Giphy cap. Persists a sliding hour window to
+    .giphy_calls so a burst right after a box reboot cannot blow the cap. Fail-safe: a file
+    error allows the call (a GIF is cosmetic; we never crash a cycle over rate-limit bookkeeping),
+    but the common path enforces the limit exactly."""
+    global _GIPHY_WARNED
+    now = time.time()
+    try:
+        stamps = json.load(open(_GIPHY_LOG)) if os.path.exists(_GIPHY_LOG) else []
+    except Exception:
+        stamps = []
+    stamps = [t for t in stamps if isinstance(t, (int, float)) and now - t < 3600]
+    if len(stamps) >= _GIPHY_MAX_PER_HOUR:
+        if not _GIPHY_WARNED:
+            print(f"  giphy rate limit hit ({_GIPHY_MAX_PER_HOUR}/hr) - skipping GIFs until the "
+                  f"window clears. Drafts still queue, just without a gif.")
+            _GIPHY_WARNED = True
+        return False
+    _GIPHY_WARNED = False
+    stamps.append(now)
+    try:
+        json.dump(stamps, open(_GIPHY_LOG, "w"))
+    except Exception:
+        pass
+    return True
+
+
 def giphy_search(q, n=3):
     key = os.environ.get("GIPHY_API_KEY")
     if not key or not q:
+        return []
+    if not _giphy_ratelimit_ok():   # honour the 100/hour cap the account is limited to
         return []
     try:
         d = _get("https://api.giphy.com/v1/gifs/search?"
