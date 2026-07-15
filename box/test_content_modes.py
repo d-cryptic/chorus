@@ -98,6 +98,43 @@ def run():
     chk(CM.fallback_provider_for("research") == "hermes:xai-oauth:grok-4.5", "research falls back to grok")
     chk(CM.fallback_provider_for("short") is None, "short (grok) has no fallback")
 
+
+    # --- batch 3 modes ---
+    for m in ("humor", "announcement", "prediction", "explainer", "analogy"):
+        chk(m in CM.MODES, f"mode {m} registered")
+        chk("—" not in CM.MODES[m]["brief"] and "–" not in CM.MODES[m]["brief"], f"{m}: no em/en-dashes")
+
+    hu = CM.MODES["humor"]["brief"].lower()
+    chk("funny because" in hu or "funny because true" in hu, "humor: funny-because-true")
+    chk("nobody: ... me:" in hu or "memespeak" in hu, "humor: bans memespeak")
+    chk("lmaooo" in hu or "laugh-track" in hu, "humor: bans laugh-tracking")
+
+    an = CM.MODES["announcement"]["brief"]
+    chk("i just shipped" in an and "i launched" in an, "announcement: bans fabricated own-launch")
+    chk("observed" in an.lower() and "third person" in an.lower(), "announcement: observed/third-person")
+    chk("game-changer" in an, "announcement: bans hype")
+
+    pr = CM.MODES["prediction"]["brief"].lower()
+    chk("specific" in pr and "timeframe" in pr and "falsifiable" in pr or "mark it right or wrong" in pr, "prediction: specific+timeframe+falsifiable")
+    chk("mark my words" in pr, "prediction: bans the badge")
+    chk("vague futurism" in pr, "prediction: bans vague futurism")
+
+    ex = CM.MODES["explainer"]["brief"].lower()
+    chk("accuracy over simplicity" in ex, "explainer: accuracy over simplicity")
+    chk("jargon dump" in ex, "explainer: bans jargon dump")
+    chk("condescension" in ex, "explainer: bans condescension")
+    chk(CM.MODES["explainer"]["shape"] == "any", "explainer: shape=any")
+
+    al = CM.MODES["analogy"]["brief"].lower()
+    chk("hold" in al and "same reason" in al, "analogy: mapping must hold (same reason)")
+    chk("uber for x" in al, "analogy: bans tired templates")
+    chk("over-explaining" in al, "analogy: bans over-explaining")
+
+    # model routing for batch 3
+    chk(CM.MODES["humor"]["model_pref"] == "grok" and CM.MODES["analogy"]["model_pref"] == "grok", "humor+analogy -> grok")
+    chk(CM.MODES["announcement"]["model_pref"] == "codex" and CM.MODES["prediction"]["model_pref"] == "codex" and CM.MODES["explainer"]["model_pref"] == "codex", "announcement+prediction+explainer -> codex")
+    chk(CM.fallback_provider_for("announcement") == "hermes:xai-oauth:grok-4.5", "announcement (codex) falls back to grok")
+
     print(f"CONTENT MODES UNIT: {p} passed, {f} failed")
     return 1 if f else 0
 
