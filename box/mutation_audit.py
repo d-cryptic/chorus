@@ -26,6 +26,11 @@ MUTANTS = [
     ("session_mine.py", 'new1_|AIza)[A-Za-z0-9_\\-]{8,}', 'ZZZZ_NEVER_MATCHES)',
      "REDACTION: L1 key regex neutered"),
     ("session_mine.py", "def leaks(", "def _dead_leaks(", "REDACTION: L3 leak check removed"),
+    # The worker had ZERO tests. I nearly shipped 20 columns against 19 values there today —
+    # every ingest would have 500'd, and I caught it by counting on my fingers.
+    ("../dashboard/src/index.ts", "gif, thread, longform, media, status",
+     "gif, thread, longform, media, extra_col, status",
+     "WORKER SQL: INSERT column/value arity broken"),
     # --dry-run was a hole straight through the breaker: fake $10 ceiling, real paid calls.
     ("post_gen.py", "if not args.no_budget:\n        flush_spend", "if False:\n        flush_spend",
      "BUDGET: dry-run spend goes unbooked again"),
