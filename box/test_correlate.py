@@ -130,8 +130,13 @@ def run():
     import inspect
     osrc = inspect.getsource(__import__("outcome_track"))
     chk('sid = f.get("suggestion_id")' in osrc, "keys the write on the real suggestion_id")
-    chk('or f.get("id")' not in osrc,
-        "NO fallback to f.id — that silently wrote orphans instead of failing visibly")
+    # Check the CODE, not the prose. The comment explaining the bug necessarily quotes it,
+    # exactly like the em-dash ban rule has to contain an em-dash — a naive substring match
+    # fails on the explanation while the code is correct.
+    sid_lines = [l for l in osrc.split("\n")
+                 if "sid = f.get(" in l and not l.strip().startswith("#")]
+    chk(sid_lines and all('or f.get("id")' not in l for l in sid_lines),
+        "NO fallback to f.id in the actual assignment (it silently wrote orphans)")
     chk("endpoint bug" in osrc, "a missing suggestion_id is reported, not papered over")
     # discovery must cover posts/quotes, not just replies (7 of 10 were invisible)
     chk("-filter:replies" in osrc, "discovers originals AND quotes")
