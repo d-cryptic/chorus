@@ -70,6 +70,15 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--cap", type=int, default=2, help="max suggestions per poll")
     ap.add_argument("--tau", type=float, default=0.45)
+    # Read at 109 (inside --dry-run) AND at the top of main(), which is the CRON path.
+    # I renamed those reads from args.dry_run to args.no_budget in b1d3b17 and only added the
+    # flag to post_gen's parser, so every real run raised AttributeError at main()'s top level
+    # -- after the paid fetch, after tracker.record, after printing "fast lane: N fetched".
+    # Paid, claimed success, queued nothing, never flushed the spend. It never fired only
+    # because the ceiling refused fast_lane all day; it would have gone off at the IST-midnight
+    # budget reset.
+    ap.add_argument("--no-budget", action="store_true",
+                    help="offline/stubbed tests only: skips the ceiling by dropping the API key")
     args = ap.parse_args()
 
     base = os.environ.get("INGEST_URL", "http://localhost:8787").rstrip("/")
