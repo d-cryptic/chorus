@@ -253,6 +253,25 @@ def _terms(title):
     return {w for w in out if w and w not in _STOP and len(w) >= 2}
 
 
+def _identifier(tok):
+    """Does this token NAME something, rather than describe it?
+
+    Corroboration needs the two ideas to share a NAME, not a vocabulary. Measured on real
+    timeline+HN data:
+      TRUE  "27B model under 6GBs" + "Bonsai 27B runs on a phone"  shared 27b, model
+      FALSE "OpenWorlds launch, agentic TRADING" + "Agnost AI, agents that DEBUG PRODUCTION"
+                                                                    shared agents, launch
+    Both clear min_overlap=2. Raising it to 3 kills the true merge too, and document-frequency
+    does not help: "agents" appears in only ~4 of 46 ideas, so IDF calls it rare while it is
+    plainly ambient vocabulary here. The real difference is that 27b NAMES a thing.
+
+    The cost is asymmetric and decides the design: a MISSED merge costs nothing (you get two
+    separate ideas), a FALSE merge writes a post claiming "this is showing up everywhere"
+    about two unrelated things. So the bar is high and the failure mode is "no merge".
+    """
+    return any(c.isdigit() for c in tok) or "-" in tok or "." in tok or len(tok) >= 12
+
+
 def correlate_sources(ideas, *, min_overlap=2):
     """Same story from several sources -> ONE stronger idea, not three weak ones.
 
@@ -276,7 +295,9 @@ def correlate_sources(ideas, *, min_overlap=2):
             idea_b, terms_b = enriched[b]
             if idea_b.get("source") == idea_a.get("source"):
                 continue                      # two HN stories are not corroboration
-            if len(terms_a & terms_b) >= min_overlap:
+            common = terms_a & terms_b
+            # enough overlap AND they share a NAME, not just niche vocabulary
+            if len(common) >= min_overlap and any(_identifier(t) for t in common):
                 group.append(idea_b)
                 used.add(b)
         used.add(a)

@@ -168,5 +168,38 @@ def run():
     finally:
         SM2._req = real
 
+    # --- corroboration needs a shared NAME, not a shared vocabulary --------------------
+    # Tested against REAL timeline tweets + REAL HN titles (every earlier test skipped the
+    # timeline, because --dry-run excludes it — so the source most likely to corroborate an
+    # HN story was the one source never exercised). With it, min_overlap=2 gave 50% precision:
+    #   TRUE  "27B model under 6GBs"      + "Bonsai 27B runs on a phone"   shared 27b, model
+    #   FALSE "OpenWorlds launch, agentic TRADING"
+    #                                     + "Agnost AI, agents that DEBUG PRODUCTION"
+    #                                                                      shared agents, launch
+    # Raising min_overlap to 3 kills the true merge too. Document-frequency does not help:
+    # "agents" is in ~4 of 46 ideas, so IDF calls it RARE while it is plainly ambient here.
+    # The real difference: 27b NAMES a thing; agents/launch describe a category.
+    # Cost is asymmetric — a missed merge costs nothing, a false merge writes a post claiming
+    # "this is showing up everywhere" about two unrelated things. Bar high, fail to "no merge".
+    chk(P._identifier("27b"), "a token with a digit names something")
+    chk(P._identifier("bonsai-27b"), "a hyphenated repo/model name does too")
+    chk(not P._identifier("agents"), "'agents' is vocabulary, not a name")
+    chk(not P._identifier("launch"), "'launch' too")
+    chk(not P._identifier("model"), "and 'model'")
+
+    real_true = [
+        {"source": "timeline", "title": "HOLYYYY 27B model under 6GBs and 4GBs. Local AI will be everywhere"},
+        {"source": "hackernews", "title": "Bonsai 27B: A 27B-Class model that runs on a phone"},
+    ]
+    chk(len(P.correlate_sources(real_true)) == 1, "the REAL corroboration still merges (shares 27b)")
+
+    real_false = [
+        {"source": "timeline", "title": "Very happy to see OpenWorlds launch today. The main problem with "
+                                        "agentic trading is that agents haven't had a proper home"},
+        {"source": "hackernews", "title": "Launch HN: Agnost AI (YC S26) - Agents that debug production"},
+    ]
+    chk(len(P.correlate_sources(real_false)) == 2,
+        "two different launches sharing only 'agents'+'launch' do NOT merge")
+
     print(f"CORRELATE UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())

@@ -26,6 +26,10 @@ MUTANTS = [
     ("session_mine.py", 'new1_|AIza)[A-Za-z0-9_\\-]{8,}', 'ZZZZ_NEVER_MATCHES)',
      "REDACTION: L1 key regex neutered"),
     ("session_mine.py", "def leaks(", "def _dead_leaks(", "REDACTION: L3 leak check removed"),
+    # 50% precision on real data before this: a false merge writes a post claiming "this is
+    # everywhere" about two unrelated stories.
+    ("post_gen.py", "and any(_identifier(t) for t in common)", "and True",
+     "CORRELATE: false merges on shared vocabulary"),
     # scrub was wired into post_gen alone, so 25% of replies and 39% of quotes shipped a
     # machine tell while the prompt "banned" them.
     ("ranker.py", '"drafts": [scrub(x) for x in d.get("drafts", []) if x][:3],',
