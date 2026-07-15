@@ -79,7 +79,20 @@ createServer(async (req, res) => {
   const path = req.url.split("?")[0];
   if (path.startsWith("/api/")) {
     if (req.method === "POST") { res.writeHead(200, { "content-type": "application/json" }); return res.end(JSON.stringify({ ok: true, queued: true })); }
-    const body = DATA[path] ?? {};
+    let body = DATA[path] ?? {};
+    // FILTER like the real worker does. It ignored ?status= and ?target= entirely, so every
+    // tab got every row: the Posted-tab test passed because the fixture handed it posted rows
+    // while sitting on the Queued tab. It would have passed with the status filter completely
+    // broken. A stand-in that answers differently from the thing it stands in for tests
+    // nothing — the same shape as a dry-run that skips the code path it is previewing.
+    if (path === "/api/suggestions") {
+      const q = new URL(req.url, "http://x").searchParams;
+      const status = q.get("status") ?? "queued";
+      const target = q.get("target");
+      const rows = (body.suggestions ?? []).filter(
+        (r) => (r.status ?? "queued") === status && (!target || r.target === target));
+      body = { ...body, suggestions: rows };
+    }
     res.writeHead(200, { "content-type": "application/json" });
     return res.end(JSON.stringify(body));
   }

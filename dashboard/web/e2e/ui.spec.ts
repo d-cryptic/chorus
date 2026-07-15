@@ -187,6 +187,11 @@ test("the read provider is never named in the bundle — it comes from config", 
 
 test("the Posted tab admits which drafts actually reached X", async ({ page }) => {
   await page.goto("/");
+  // Actually GO to the Posted tab. This used to assert from the Queued tab and passed only
+  // because the fixture ignored ?status= and served every row everywhere — it would have
+  // passed with the status filter completely broken. The fixture filters like the worker now,
+  // which is what turned this test honest (and briefly red).
+  await page.getByRole("tab", { name: /^posted/i }).click();
   // "posted" in Chorus means the user CLICKED Post on X. The intent URL only OPENS X's
   // composer; they still have to hit Post there. Measured against their real timeline:
   // only 4 of 10 "posted" suggestions exist on X. The tab said "10 posted" and meant 4.
