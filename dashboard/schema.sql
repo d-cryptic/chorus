@@ -135,3 +135,17 @@ CREATE TABLE IF NOT EXISTS follower_snapshot (
   ts INTEGER PRIMARY KEY,
   count INTEGER NOT NULL
 );
+
+-- Box-only state that exists NOWHERE else. targets.json and rejected_anchors.txt are
+-- git-ignored on purpose (they name real people and carry the read-provider's handle list),
+-- so they live on one Hetzner VM and nowhere else: 216 curated handles and 15 human
+-- judgements, hours of work, one disk failure from gone.
+-- backup.py existed but (a) was never scheduled and (b) backed up D1 — which Cloudflare
+-- already makes durable. It protected the safe thing and ignored the fragile one.
+-- Supermemory is deliberately NOT here: it is derivable from D1 + a style_mine run, and 6MB
+-- of re-derivable embeddings is not worth the row. This is 5KB of pure judgement.
+CREATE TABLE IF NOT EXISTS box_state (
+  k    TEXT PRIMARY KEY,          -- filename, e.g. "targets.json"
+  body TEXT NOT NULL,
+  ts   INTEGER NOT NULL
+);

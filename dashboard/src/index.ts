@@ -253,6 +253,21 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       ).bind(Date.now(), lim).all();
       return json({ queue: results });
     }
+    // Box-only state backup. targets.json + rejected_anchors.txt are git-ignored (they name
+    // real people) so they exist on ONE VM. 5KB of pure judgement, one disk failure from gone.
+    if (req.method === "POST" && p === "/api/box/state") {
+      const b: any = await req.json();
+      if (!b?.k || typeof b.body !== "string") return json({ error: "bad state" }, 400);
+      await env.DB.prepare("INSERT INTO box_state (k, body, ts) VALUES (?,?,?) " +
+                           "ON CONFLICT(k) DO UPDATE SET body=excluded.body, ts=excluded.ts")
+        .bind(b.k, b.body, Date.now()).run();
+      return json({ ok: true, bytes: b.body.length });
+    }
+    if (req.method === "GET" && p === "/api/box/state") {
+      const { results } = await env.DB.prepare("SELECT k, body, ts FROM box_state").all();
+      return json({ state: results });
+    }
+
     if (req.method === "GET" && p === "/api/box/feedback") {
       const since = Number(url.searchParams.get("since") ?? 0) || 0;
       const { results } = await env.DB.prepare(

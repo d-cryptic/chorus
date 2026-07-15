@@ -79,5 +79,9 @@ def run():
         chk(len(cols) == m.group(2).count("?") + len(literals),
             "columns == placeholders + literals (the asymmetry that hid the 20/19 bug)")
 
+    # box_state carries the only copy of 216 curated handles + 15 human judgements
+    chk("box_state" in src, "the box-state backup endpoint exists")
+    chk("ON CONFLICT(k) DO UPDATE" in src, "a re-backup UPDATES rather than erroring")
+
     print(f"WORKER SQL UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())
