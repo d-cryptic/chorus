@@ -7,6 +7,8 @@
 import { jwtVerify, createRemoteJWKSet } from "jose";
 
 export interface Env {
+  PROVIDER_NAME?: string;
+  PROVIDER_URL?: string;
   DB: D1Database;
   ASSETS: Fetcher;
   ALLOWED_EMAIL: string;
@@ -21,6 +23,7 @@ const json = (d: unknown, s = 200) =>
 
 const STATUS: Record<string, string> = {
   posted: "posted", posted_edited: "posted", dismissed: "dismissed", snoozed: "snoozed",
+  queued: "queued",   // UNDO: an action is irreversible without this; the UI offers "Undo (z)"
 };
 const localDay = (o = 330) => new Date(Date.now() + o * 60000).toISOString().slice(0, 10); // IST
 
@@ -69,22 +72,124 @@ export default {
 async function human(req: Request, env: Env, url: URL): Promise<Response> {
   try {
     if (req.method === "GET" && url.pathname === "/api/suggestions") {
+      const tgt = url.searchParams.get("target");   // e.g. ?target=post for the Posts tab
       const status = url.searchParams.get("status") ?? "queued";
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 50) || 50, 200);
       const now = Date.now();
       const { results } = await env.DB.prepare(
-        `SELECT * FROM suggestion
-           WHERE (status = ?1 OR (status='snoozed' AND snooze_until IS NOT NULL AND snooze_until <= ?2))
-             AND (expires_at IS NULL OR expires_at > ?2)
-           ORDER BY score DESC LIMIT ?3`
-      ).bind(status, now, limit).all();
-      return json({ suggestions: results });
+        // `verified`: outcome_track writes an outcome row ONLY for suggestions it actually
+        // FOUND on the user's timeline. "Post on X" opens an intent URL — it merely opens X's
+        // composer, and the user still has to hit Post there. Measured: only 4 of 10 "posted"
+        // suggestions exist on X. Without this the Posted tab reports 10 and means 4.
+        `SELECT s.*, (o.suggestion_id IS NOT NULL) AS verified, o.likes AS o_likes, o.replies AS o_replies
+           FROM suggestion s LEFT JOIN outcome o ON o.suggestion_id = s.id
+           WHERE (s.status = ?1 OR (?1 = 'queued' AND s.status='snoozed' AND s.snooze_until IS NOT NULL AND s.snooze_until <= ?2))
+             -- expires_at means "the reply window closed", which is only meaningful for the
+             -- QUEUED lane. It used to apply to every status: a posted row keeps its 48h
+             -- expires_at forever (the sweep only re-statuses 'queued'), so once that passed,
+             -- the Posted tab returned [] while the badge -- an unfiltered GROUP BY status --
+             -- still said 12. Badge says N, list says 0, "Queue clear". Nothing had fired yet
+             -- only because the oldest posted row expires 2026-07-16 17:16Z.
+             AND (?1 != 'queued' OR s.expires_at IS NULL OR s.expires_at > ?2)
+             AND (?4 IS NULL OR s.target = ?4)
+           ORDER BY s.score DESC LIMIT ?3`
+      ).bind(status, now, limit, tgt).all();
+      const { results: cRows } = await env.DB.prepare(
+        "SELECT status, COUNT(*) n FROM suggestion GROUP BY status"
+      ).all<{ status: string; n: number }>();
+      const counts: Record<string, number> = {};
+      for (const r of cRows) counts[r.status] = r.n;
+      // the Posts tab needs its own count (queued originals), not a status count
+      const pc = await env.DB.prepare(
+        "SELECT COUNT(*) n FROM suggestion WHERE status='queued' AND target='post'"
+      ).first<{ n: number }>();
+      counts.posts = pc?.n ?? 0;
+      return json({ suggestions: results, counts });
     }
     if (req.method === "GET" && url.pathname === "/api/spend") return json(await spendToday(env));
     if (req.method === "GET" && url.pathname === "/api/status") {
-      const row = await env.DB.prepare("SELECT started_at, finished_at, suggested, error FROM run_log ORDER BY id DESC LIMIT 1").first();
-      return json({ lastRun: row ?? null });
+      const row = await env.DB.prepare("SELECT started_at, finished_at, suggested, error, credits FROM run_log ORDER BY id DESC LIMIT 1").first();
+      // Recent failures, so a dead provider / blown budget is visible in the UI instead
+      // of only in /var/log/chorus.log where nobody looks.
+      // An alert is only LIVE if nothing has succeeded since. Otherwise a fixed problem
+      // (e.g. credits topped up) keeps shouting from history — which is exactly what
+      // happened: 2 old no_credits rows kept the banner up on a 981k-credit account.
+      const lastOk = await env.DB.prepare(
+        "SELECT id FROM run_log WHERE error IS NULL AND finished_at IS NOT NULL ORDER BY id DESC LIMIT 1"
+      ).first<{ id: number }>();
+      const { results: alerts } = await env.DB.prepare(
+        "SELECT started_at, error FROM run_log WHERE error IS NOT NULL AND id > ?1 AND started_at > ?2 ORDER BY id DESC LIMIT 5"
+      ).bind(lastOk?.id ?? 0, Date.now() - 7 * 86400000).all();
+      // Runway was `credits / 8600` — a magic number that appears nowhere else and was
+      // simply wrong (it claimed ~114d while the observed burn implied ~2d). run_log records
+      // the provider balance at each cycle, so the burn rate is OBSERVABLE: take the oldest
+      // and newest readings in the window and divide by elapsed time. Needs >=2 readings and
+      // a real time span, else we would divide by ~0 and print a confident garbage number.
+      const { results: bal } = await env.DB.prepare(
+        "SELECT started_at, credits FROM run_log WHERE credits IS NOT NULL AND started_at > ?1 ORDER BY started_at ASC"
+      ).bind(Date.now() - 7 * 86400000).all<{ started_at: number; credits: number }>();
+      let creditsPerDay: number | null = null;
+      if (bal.length >= 2) {
+        const first = bal[0], last = bal[bal.length - 1];
+        const days = (last.started_at - first.started_at) / 86400000;
+        const burned = first.credits - last.credits;
+        // a top-up makes `burned` negative; that is not a burn rate, it is new money
+        if (days > 0.02 && burned > 0) creditsPerDay = Math.round(burned / days);
+      }
+      // Vendor identity is config: PROVIDER_NAME/PROVIDER_URL are wrangler vars, so the
+      // public repo never names the read provider.
+      const provider = env.PROVIDER_NAME ? { name: env.PROVIDER_NAME, url: env.PROVIDER_URL } : null;
+      return json({ lastRun: row ?? null, alerts, creditsPerDay, provider });
     }
+    // Human control surface for the safety switches. Without this the kill-switch is
+    // only reachable via raw SQL, which makes it useless in the moment you need it.
+    if (req.method === "GET" && url.pathname === "/api/settings") {
+      const row = await env.DB.prepare(
+        "SELECT paused, killed, daily_ceiling_usd, quiet_hours, denylist, autonomy_level FROM settings WHERE id=1"
+      ).first();
+      return json({ settings: row ?? {} });
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/settings") {
+      if (req.headers.get("X-Chorus") !== "1") return json({ error: "csrf" }, 400);
+      const b = await req.json<any>().catch(() => ({}));
+      const sets: string[] = [];
+      const vals: any[] = [];
+      if (b.paused !== undefined) { sets.push("paused=?"); vals.push(b.paused ? 1 : 0); }
+      if (b.killed !== undefined) { sets.push("killed=?"); vals.push(b.killed ? 1 : 0); }
+      if (b.daily_ceiling_usd !== undefined) {
+        const v = Number(b.daily_ceiling_usd);
+        if (!Number.isFinite(v) || v < 0 || v > 100) return json({ error: "ceiling must be 0..100" }, 400);
+        sets.push("daily_ceiling_usd=?"); vals.push(v);
+      }
+      if (b.quiet_hours !== undefined) { sets.push("quiet_hours=?"); vals.push(b.quiet_hours || null); }
+      if (b.denylist !== undefined) { sets.push("denylist=?"); vals.push(b.denylist || null); }
+      if (!sets.length) return json({ error: "nothing to update" }, 400);
+      await env.DB.prepare(`UPDATE settings SET ${sets.join(", ")} WHERE id=1`).bind(...vals).run();
+      const row = await env.DB.prepare(
+        "SELECT paused, killed, daily_ceiling_usd, quiet_hours, denylist FROM settings WHERE id=1"
+      ).first();
+      return json({ settings: row });
+    }
+
+    // The Worker cannot fetch tweets (no provider key, and it must not have one). The
+    // dashboard raises a flag; the box polls it every 5m and runs a real cycle.
+    if (req.method === "POST" && url.pathname === "/api/fetch") {
+      if (req.headers.get("X-Chorus") !== "1") return json({ error: "csrf" }, 400);
+      await env.DB.prepare("UPDATE settings SET fetch_now=1 WHERE id=1").run();
+      return json({ queued: true });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/insights") {
+      const { results } = await env.DB.prepare(
+        "SELECT kind, scope, subject_id, payload, confidence, evidence, created_at FROM insight WHERE status='active' ORDER BY confidence DESC, created_at DESC LIMIT 100"
+      ).all();
+      const pb = await env.DB.prepare(
+        "SELECT phase, doc, created_at FROM playbook ORDER BY created_at DESC LIMIT 1"
+      ).first();
+      return json({ insights: results, playbook: pb ?? null });
+    }
+
     if (req.method === "GET" && url.pathname === "/api/review") {
       const [byPillar, byTier, reasons, spend, weights] = await Promise.all([
         env.DB.prepare(`SELECT s.pillar AS k, SUM(CASE WHEN f.action IN ('posted','posted_edited') THEN 1 ELSE 0 END) AS posted, COUNT(*) AS total FROM feedback f JOIN suggestion s ON s.id=f.suggestion_id GROUP BY s.pillar`).all(),
@@ -105,8 +210,8 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
       const now = Date.now();
       const snooze = b.action === "snoozed" ? now + (b.snooze_hours ?? 2) * 3600_000 : null;
       const res = await env.DB.prepare(
-        "UPDATE suggestion SET status=?, acted_at=?, snooze_until=?, final_text=COALESCE(?,final_text), posted_url=COALESCE(?,posted_url), dismiss_reason=COALESCE(?,dismiss_reason) WHERE id=?"
-      ).bind(st, now, snooze, b.final_text ?? null, (b as any).posted_url ?? null, b.reason ?? null, id).run();
+        "UPDATE suggestion SET status=?, acted_at=?, snooze_until=?, final_text=COALESCE(?,final_text), posted_url=COALESCE(?,posted_url), dismiss_reason=COALESCE(?,dismiss_reason), draft_index=COALESCE(?,draft_index) WHERE id=?"
+      ).bind(st, now, snooze, b.final_text ?? null, (b as any).posted_url ?? null, b.reason ?? null, (b as any).draft_index ?? null, id).run();
       if (!res.meta.changes) return json({ error: "not found" }, 404);
       await env.DB.prepare("INSERT INTO feedback (suggestion_id, action, final_text, reason, ts) VALUES (?,?,?,?,?)")
         .bind(id, b.action, b.final_text ?? null, b.reason ?? null, now).run();
@@ -154,16 +259,110 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       ).bind(Date.now(), lim).all();
       return json({ queue: results });
     }
+    // Box-only state backup. targets.json + rejected_anchors.txt are git-ignored (they name
+    // real people) so they exist on ONE VM. 5KB of pure judgement, one disk failure from gone.
+    if (req.method === "POST" && p === "/api/box/state") {
+      const b: any = await req.json();
+      if (!b?.k || typeof b.body !== "string") return json({ error: "bad state" }, 400);
+      await env.DB.prepare("INSERT INTO box_state (k, body, ts) VALUES (?,?,?) " +
+                           "ON CONFLICT(k) DO UPDATE SET body=excluded.body, ts=excluded.ts")
+        .bind(b.k, b.body, Date.now()).run();
+      return json({ ok: true, bytes: b.body.length });
+    }
+    if (req.method === "GET" && p === "/api/box/state") {
+      const { results } = await env.DB.prepare("SELECT k, body, ts FROM box_state").all();
+      return json({ state: results });
+    }
+
     if (req.method === "GET" && p === "/api/box/feedback") {
       const since = Number(url.searchParams.get("since") ?? 0) || 0;
       const { results } = await env.DB.prepare(
-        "SELECT f.id, f.action, f.final_text, f.reason, f.ts, s.author_handle, s.angle, s.factors, o.likes, o.replies FROM feedback f JOIN suggestion s ON s.id=f.suggestion_id LEFT JOIN outcome o ON o.suggestion_id=s.id WHERE f.ts > ? ORDER BY f.ts LIMIT 500"
+        // posted_text = what was ACTUALLY sent. A plain "posted" has no final_text (only an
+      // edit does), so fall back to the draft the user actually picked via draft_index.
+      // Without this the corpus only ever captured EDITED posts — 1 of 8 — starving voice
+      // RAG and the repetition guard of the real ground truth.
+      // s.thread/s.longform: without these the insights engine cannot see SHAPE at all, so
+      // winning_shape would silently correlate nothing. s.pillar likewise.
+      // f.suggestion_id is REQUIRED: outcome_track keys its write on it and fell back to f.id
+      // (the feedback row's autoincrement) when it was absent, writing orphan outcome rows
+      // keyed "15.0"/"13.0" that join to nothing. Outcome measurement never once worked.
+      "SELECT f.id, f.suggestion_id, f.action, f.final_text, f.reason, f.ts, s.author_handle, s.angle, s.factors, s.drafts, s.draft_index, s.target, s.thread, s.longform, s.pillar, o.likes, o.replies, " +
+      "COALESCE(f.final_text, json_extract(s.drafts, '$[' || COALESCE(s.draft_index,0) || ']')) AS posted_text " +
+      "FROM feedback f JOIN suggestion s ON s.id=f.suggestion_id LEFT JOIN outcome o ON o.suggestion_id=s.id WHERE f.ts > ? ORDER BY f.ts LIMIT 500"
       ).bind(since).all();
-      return json({ feedback: results });
+
+      // EXPIRY IS A REJECTION, and it was invisible here. The user posts the good ones and
+      // ignores the rest; they do not click Dismiss. Result: 10 posted / 0 dismissed, and
+      // rank_tune has NEVER run ("need both accepted and dismissed feedback") — the learning
+      // loop starved on a signal we already had. An expired suggestion is a soft no.
+      // It is only evidence if the user was PRESENT: if they were away for a day everything
+      // expires and that says nothing about their taste. So we hand the box expires_at and
+      // let it decide (it has the activity timeline); we do NOT fabricate a feedback row.
+      const { results: expired } = await env.DB.prepare(
+        "SELECT s.id, s.id AS suggestion_id, 'expired' AS action, NULL AS final_text, NULL AS reason, s.expires_at AS ts, " +
+        "s.author_handle, s.angle, s.factors, s.drafts, s.draft_index, s.target, s.thread, s.longform, s.pillar, " +
+        "NULL AS likes, NULL AS replies, NULL AS posted_text " +
+        "FROM suggestion s WHERE s.status='expired' AND s.expires_at > ? ORDER BY s.expires_at LIMIT 500"
+      ).bind(since).all();
+      return json({ feedback: [...results, ...expired] });
     }
+    // Latest stored fingerprint — lets the box skip paid L3 synthesis when nothing moved.
+    if (req.method === "GET" && p === "/api/box/insights") {
+      const row = await env.DB.prepare(
+        "SELECT fingerprint FROM insight WHERE status='active' AND fingerprint IS NOT NULL ORDER BY created_at DESC LIMIT 1"
+      ).first<{ fingerprint: string }>();
+      const { results } = await env.DB.prepare(
+        "SELECT id, kind, scope, subject_id, payload, confidence, evidence, created_at FROM insight WHERE status='active' ORDER BY created_at DESC LIMIT 200"
+      ).all();
+      return json({ fingerprint: row?.fingerprint ?? null, insights: results });
+    }
+
+    if (req.method === "POST" && p === "/api/box/insights") {
+      const body = await req.json<any>().catch(() => ({}));
+      const list = Array.isArray(body?.insights) ? body.insights : [];
+      const fp = body?.fingerprint ?? null;
+      const now = Date.now();
+      // Deterministic id => a re-run replaces its own row, never duplicates (v0 rule).
+      for (const i of list) {
+        if (!i?.id || !i?.kind) continue;
+        await env.DB.prepare(
+          // status comes from the payload, not hardcoded. insights.py apply_decay() marks
+          // sub-floor claims "decayed" and POSTs them back; forcing 'active' here resurrected
+          // them, so /api/insights (WHERE status='active') served stale claims forever.
+          // created_at is preserved on UPDATE (only set on first INSERT): decay computes age
+          // from created_at, so resetting it to `now` every pass meant age~0 and decay NEVER
+          // progressed. The claim's BIRTH date must survive re-confirmation.
+          `INSERT INTO insight (id, kind, scope, subject_id, term, payload, confidence, evidence, status, fingerprint, created_at)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)
+           ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, confidence=excluded.confidence,
+             evidence=excluded.evidence, status=excluded.status, fingerprint=excluded.fingerprint,
+             superseded_by=NULL`
+        ).bind(i.id, i.kind, i.scope ?? "user", i.subject_id ?? null, i.term ?? null,
+               JSON.stringify(i.payload ?? {}), Number(i.confidence ?? 0),
+               JSON.stringify(i.evidence ?? []), i.status ?? "active", fp, now).run();
+      }
+      return json({ stored: list.length });
+    }
+
+    if (req.method === "POST" && p === "/api/box/playbook") {
+      const b = await req.json<any>().catch(() => ({}));
+      if (!b?.doc) return json({ error: "doc required" }, 400);
+      await env.DB.prepare(
+        "INSERT INTO playbook (phase, doc, fingerprint, created_at) VALUES (?,?,?,?)"
+      ).bind(b.phase ?? "cold_start", JSON.stringify(b.doc), b.fingerprint ?? null, Date.now()).run();
+      return json({ ok: true });
+    }
+
+    // box: read + clear the fetch flag
+    if (req.method === "POST" && p === "/api/box/fetch-claim") {
+      const row = await env.DB.prepare("SELECT fetch_now FROM settings WHERE id=1").first<{fetch_now:number}>();
+      if (row?.fetch_now) await env.DB.prepare("UPDATE settings SET fetch_now=0 WHERE id=1").run();
+      return json({ requested: Boolean(row?.fetch_now) });
+    }
+
     if (req.method === "GET" && p === "/api/box/settings") {
-      const row = await env.DB.prepare("SELECT paused, daily_ceiling_usd, quiet_hours, denylist FROM settings WHERE id=1").first();
-      return json({ settings: row ?? { paused: 0, daily_ceiling_usd: 0.65 } });
+      const row = await env.DB.prepare("SELECT paused, daily_ceiling_usd, quiet_hours, denylist, killed, autonomy_level FROM settings WHERE id=1").first();
+      return json({ settings: row ?? { paused: 0, daily_ceiling_usd: 0.65, killed: 0, autonomy_level: "L1" } });
     }
     const b = req.method === "POST" ? ((await req.json()) as any) : {};
     const now = Date.now();
@@ -172,21 +371,68 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       if (!st) return json({ error: "bad action" }, 400);
       const snooze = b.action === "snoozed" ? now + (b.snooze_hours ?? 2) * 3600_000 : null;
       const r = await env.DB.prepare(
-        "UPDATE suggestion SET status=?, acted_at=?, snooze_until=?, final_text=COALESCE(?,final_text), posted_url=COALESCE(?,posted_url), dismiss_reason=COALESCE(?,dismiss_reason) WHERE id=?"
-      ).bind(st, now, snooze, b.final_text ?? null, b.posted_url ?? null, b.reason ?? null, b.id).run();
+        "UPDATE suggestion SET status=?, acted_at=?, snooze_until=?, final_text=COALESCE(?,final_text), posted_url=COALESCE(?,posted_url), dismiss_reason=COALESCE(?,dismiss_reason), draft_index=COALESCE(?,draft_index) WHERE id=?"
+      ).bind(st, now, snooze, b.final_text ?? null, b.posted_url ?? null, b.reason ?? null, b.draft_index ?? null, b.id).run();
       if (!r.meta.changes) return json({ error: "not found" }, 404);
       await env.DB.prepare("INSERT INTO feedback (suggestion_id, action, final_text, reason, ts) VALUES (?,?,?,?,?)")
         .bind(b.id, b.action, b.final_text ?? null, b.reason ?? null, now).run();
       return json({ ok: true, status: st });
     }
+    if (req.method === "POST" && p === "/api/box/followers") {
+      if (typeof b?.count !== "number") return json({ error: "count required" }, 400);
+      await env.DB.prepare("INSERT OR REPLACE INTO follower_snapshot (ts, count) VALUES (?,?)")
+        .bind(b.ts ?? now, b.count).run();
+      return json({ ok: true });
+    }
+
+    if (req.method === "GET" && p === "/api/box/followers") {
+      const { results: history } = await env.DB.prepare(
+        "SELECT ts, count FROM follower_snapshot ORDER BY ts DESC LIMIT 48"
+      ).all<{ ts: number; count: number }>();
+      // replies actually posted between the last two snapshots -> the delta's candidates
+      let acted = 0;
+      if (history.length >= 2) {
+        const r = await env.DB.prepare(
+          "SELECT COUNT(*) n FROM feedback WHERE action IN ('posted','posted_edited') AND ts > ? AND ts <= ?"
+        ).bind(history[1].ts, history[0].ts).first<{ n: number }>();
+        acted = r?.n ?? 0;
+      }
+      return json({ history, acted_between: acted });
+    }
+
+    if (req.method === "POST" && p === "/api/box/capture") {
+      const t = String(b?.text ?? "").trim();
+      if (!t) return json({ error: "text required" }, 400);
+      // id = hash of the text, so re-mining the same session never duplicates the idea
+      const id = [...t].reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0).toString(36);
+      await env.DB.prepare(
+        "INSERT INTO capture (id, text, source, created_at) VALUES (?,?,?,?) ON CONFLICT(id) DO NOTHING"
+      ).bind(id, t.slice(0, 400), b?.source ?? null, now).run();
+      return json({ ok: true, id });
+    }
+
+    if (req.method === "GET" && p === "/api/box/captures") {
+      const { results } = await env.DB.prepare(
+        "SELECT id, text, source FROM capture WHERE consumed=0 ORDER BY created_at DESC LIMIT 20"
+      ).all();
+      return json({ captures: results });
+    }
+
+    if (req.method === "POST" && p === "/api/box/capture-consume") {
+      if (b?.id) await env.DB.prepare("UPDATE capture SET consumed=1 WHERE id=?").bind(b.id).run();
+      return json({ ok: true });
+    }
+
+
     if (req.method === "POST" && (p === "/api/box/ingest" || p === "/api/ingest")) {
       await env.DB.prepare(
-        `INSERT INTO suggestion (id, tweet_id, tweet_url, tweet_text, author_handle, author_tier, score, factors, pillar, angle, drafts, rationale, status, created_at, expires_at)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'queued',?,?)
-         ON CONFLICT(tweet_id) DO UPDATE SET score=excluded.score, factors=excluded.factors, angle=excluded.angle, drafts=excluded.drafts, rationale=excluded.rationale`
+        `INSERT INTO suggestion (id, tweet_id, tweet_url, tweet_text, author_handle, author_tier, score, factors, pillar, angle, drafts, rationale, target, gif, thread, longform, media, status, created_at, expires_at)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'queued',?,?)
+         ON CONFLICT(tweet_id) DO UPDATE SET score=excluded.score, factors=excluded.factors, angle=excluded.angle, drafts=excluded.drafts, rationale=excluded.rationale, target=excluded.target, gif=excluded.gif, thread=excluded.thread, longform=excluded.longform, media=excluded.media`
       ).bind(b.id, b.tweet_id, b.tweet_url ?? null, b.tweet_text, b.author_handle, b.author_tier ?? null,
         b.score, JSON.stringify(b.factors ?? {}), b.pillar ?? null, b.angle ?? null,
-        JSON.stringify(b.drafts ?? []), b.rationale ?? null, now, b.expires_at ?? null).run();
+        JSON.stringify(b.drafts ?? []), b.rationale ?? null, b.target ?? "reply",
+        b.gif ?? null, JSON.stringify(b.thread ?? []), b.longform ?? null, JSON.stringify(b.media ?? []), now, b.expires_at ?? null).run();
       return json({ ok: true });
     }
     if (req.method === "POST" && (p === "/api/box/spend" || p === "/api/spend")) {
@@ -209,8 +455,9 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
         const r = await env.DB.prepare("INSERT INTO run_log (started_at) VALUES (?)").bind(now).run();
         return json({ id: r.meta.last_row_id });
       }
-      await env.DB.prepare("UPDATE run_log SET finished_at=?, suggested=?, error=? WHERE id=?")
-        .bind(now, b.suggested ?? null, b.error ?? null, b.id).run();
+      await env.DB.prepare("UPDATE run_log SET finished_at=?, suggested=?, error=?, credits=COALESCE(?,credits) WHERE id=?")
+        .bind(now, b.suggested ?? null, b.error ?? null,
+              b.credits ?? null, b.id).run();
       return json({ ok: true });
     }
     if (req.method === "POST" && p === "/api/box/outcome") {

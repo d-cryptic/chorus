@@ -38,3 +38,15 @@ output "dashboard_access_aud" {
   value       = var.enable_dashboard_access ? cloudflare_zero_trust_access_application.dashboard[0].aud : null
   description = "Set as ACCESS_AUD in dashboard/wrangler.toml (with ACCESS_TEAM_DOMAIN) for JWT verification (F2)."
 }
+
+output "ssh_service_token_client_id" {
+  value       = cloudflare_zero_trust_access_service_token.ssh_box.client_id
+  sensitive   = true
+  description = "CF-Access-Client-Id for non-interactive SSH over the tunnel."
+}
+
+output "ssh_service_token_client_secret" {
+  value       = cloudflare_zero_trust_access_service_token.ssh_box.client_secret
+  sensitive   = true
+  description = "CF-Access-Client-Secret for non-interactive SSH over the tunnel."
+}

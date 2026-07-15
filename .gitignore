@@ -33,3 +33,14 @@ box/*.json
 dashboard/.deploy_token
 infra/cmo-agent/.tunnel_secret
 infra/cmo-agent/.deploy_token
+
+# shadcn UI build
+dashboard/web/node_modules/
+dashboard/web/.vite/
+infra/cmo-agent/.ssh_service_token
+dashboard/web/e2e/*.png
+dashboard/web/test-results/
+dashboard/web/playwright-report/
+box/captures.txt
+# judgements about specific real people — box-only, like targets.json
+box/rejected_anchors.txt

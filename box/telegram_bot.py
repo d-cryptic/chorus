@@ -12,11 +12,13 @@ TG = f"https://api.telegram.org/bot{BOT}"
 
 def tg(method, **params):
     r = urllib.request.Request(f"{TG}/{method}", data=json.dumps(params).encode(), method="POST")
+    r.add_header("user-agent", "chorus-box/1.0")
     r.add_header("content-type", "application/json")
     return json.loads(urllib.request.urlopen(r, timeout=45).read())
 
 def box(method, path, body=None):
     r = urllib.request.Request(API + path, data=json.dumps(body).encode() if body else None, method=method)
+    r.add_header("user-agent", "chorus-box/1.0")
     r.add_header("content-type", "application/json")
     if TOK: r.add_header("authorization", "Bearer " + TOK)
     return json.loads(urllib.request.urlopen(r, timeout=20).read())

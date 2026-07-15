@@ -7,6 +7,7 @@ import os, sys, json, argparse, urllib.request
 
 def _post(url, key, body, timeout=30):
     r = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST")
+    r.add_header("user-agent", "chorus-box/1.0")
     r.add_header("content-type", "application/json")
     if key:
         r.add_header("authorization", f"Bearer {key}")

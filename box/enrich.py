@@ -6,6 +6,7 @@ import os, json, time, argparse, urllib.request, urllib.parse
 
 def _get(url, headers=None, timeout=20):
     r = urllib.request.Request(url)
+    r.add_header("user-agent", "chorus-box/1.0")
     for k, v in (headers or {}).items(): r.add_header(k, v)
     with urllib.request.urlopen(r, timeout=timeout) as resp:
         return json.loads(resp.read() or "{}")
@@ -40,6 +41,7 @@ def store(items, tag):
         payload = {"content": f"[{it['src']}] {it['title']} — {it['content']} ({it['url']})",
                    "containerTags": [tag], "metadata": {"kind": "enrichment", "src": it["src"], "ts": int(time.time() * 1000)}}
         r = urllib.request.Request(url, data=json.dumps(payload).encode(), method="POST")
+        r.add_header("user-agent", "chorus-box/1.0")
         r.add_header("content-type", "application/json")
         if key: r.add_header("authorization", "Bearer " + key)
         try: urllib.request.urlopen(r, timeout=15)

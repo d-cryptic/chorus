@@ -1,0 +1,2 @@
+# One idea per line. A capture ALWAYS wins over trends (v0 G1 priority #1).
+# e.g. shipped the tunnel-only ssh lockdown today, took 20 min

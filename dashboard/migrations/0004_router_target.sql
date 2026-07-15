@@ -1,0 +1,1 @@
+ALTER TABLE suggestion ADD COLUMN target TEXT NOT NULL DEFAULT 'reply';

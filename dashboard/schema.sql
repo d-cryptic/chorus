@@ -14,6 +14,14 @@ CREATE TABLE IF NOT EXISTS suggestion (
   angle          TEXT,
   drafts         TEXT,
   rationale      TEXT,
+  -- router decision (v0 'the spine'): reply | quote | retweet. A retweet row
+  -- carries NO drafts - just a rationale for why it is worth amplifying.
+  target         TEXT NOT NULL DEFAULT 'reply',
+  media          TEXT,                          -- JSON [{type,url,page}] from the tweet
+  gif            TEXT,                          -- Giphy SEARCH phrase (v0: search, never generate)
+  thread         TEXT,                          -- JSON array; only when the take needs >280 chars
+  longform       TEXT,                          -- single >280 post (Premium Plus); depth without separable beats
+
   status         TEXT NOT NULL DEFAULT 'queued', -- queued|posted|dismissed|snoozed|expired
   created_at     INTEGER NOT NULL,
   expires_at     INTEGER,
@@ -21,7 +29,8 @@ CREATE TABLE IF NOT EXISTS suggestion (
   acted_at       INTEGER,
   final_text     TEXT,                           -- what you actually posted (for voice edit-diff)
   posted_url     TEXT,                           -- URL of the reply you posted (for outcome-track)
-  dismiss_reason TEXT
+  dismiss_reason TEXT,
+  draft_index    INTEGER            -- which of the 2-3 drafts you actually picked
 );
 CREATE UNIQUE INDEX IF NOT EXISTS uq_suggestion_tweet ON suggestion(tweet_id); -- F8: no dupes
 CREATE INDEX IF NOT EXISTS idx_suggestion_status_score ON suggestion(status, score DESC);
@@ -57,12 +66,86 @@ CREATE TABLE IF NOT EXISTS settings (
   id INTEGER PRIMARY KEY CHECK (id = 1),
   paused INTEGER NOT NULL DEFAULT 0,
   daily_ceiling_usd REAL NOT NULL DEFAULT 0.65,
-  quiet_hours TEXT, denylist TEXT
+  quiet_hours TEXT, denylist TEXT,
+  -- killed = global kill-switch: absolute, independent of budget, beats `paused`.
+  -- `paused` is a soft/resumable stop; `killed` halts every paid call immediately.
+  killed INTEGER NOT NULL DEFAULT 0,
+  -- L0 suggest-only | L1 draft-and-queue (effective max: Chorus has no write lane).
+  -- L2/L3 are refused at the enforcement point - they need outward actions.
+  autonomy_level TEXT NOT NULL DEFAULT 'L1',
+  -- set by the dashboard's Fetch button; the box polls it every 5m and runs a cycle
+  fetch_now      INTEGER NOT NULL DEFAULT 0
 );
 INSERT OR IGNORE INTO settings (id) VALUES (1);
 
 -- G5: one row per cycle → dashboard heartbeat ("last cycle 2h ago · 14 suggested").
 CREATE TABLE IF NOT EXISTS run_log (
+  -- credits = provider balance at cycle start. This is the meter that ACTUALLY binds:
+  -- daily_ceiling_usd counts our own estimate, and 100k credits = $1, so a $0.65 ceiling
+  -- is 65k credits/day. Surfacing it is how you see real runway.
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   started_at INTEGER NOT NULL, finished_at INTEGER, suggested INTEGER, error TEXT
+);
+
+-- Typed insights (v0 nakama insights spec). Deterministic id = hash(kind|scope|subject)
+-- so a re-run SUPERSEDES rather than duplicating. confidence=0 + payload.state=
+-- 'insufficient_data' is a first-class, honest result: at low n we refuse to claim.
+CREATE TABLE IF NOT EXISTS insight (
+  id TEXT PRIMARY KEY,
+  kind TEXT NOT NULL,
+  scope TEXT NOT NULL,
+  subject_id TEXT,
+  term TEXT,
+  payload TEXT NOT NULL,
+  confidence REAL NOT NULL DEFAULT 0,
+  evidence TEXT,
+  status TEXT NOT NULL DEFAULT 'active',   -- active|superseded|decayed|archived
+  fingerprint TEXT,
+  created_at INTEGER NOT NULL,
+  superseded_by TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_insight_live ON insight(status, kind, created_at DESC);
+
+-- L3 synthesis output. Only written when the L1 fingerprint MOVED (change-gating),
+-- so a quiet week costs $0 in LLM spend.
+CREATE TABLE IF NOT EXISTS playbook (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  phase TEXT NOT NULL,                     -- cold_start|traction|compounding
+  doc TEXT NOT NULL,
+  fingerprint TEXT,
+  created_at INTEGER NOT NULL
+);
+
+-- Captures: "a direct request always wins" (v0 G1 priority #1). Written by
+-- session_mine.py (which runs on the laptop, where the sessions are) and consumed by
+-- post_gen.py (which runs on the box). Shape-only text: the miner redacts and leak-checks
+-- BEFORE anything reaches here.
+CREATE TABLE IF NOT EXISTS capture (
+  id TEXT PRIMARY KEY,
+  text TEXT NOT NULL,
+  source TEXT,
+  consumed INTEGER NOT NULL DEFAULT 0,
+  created_at INTEGER NOT NULL
+);
+
+-- The ONLY metric that matters. Everything else (likes, replies) is a proxy. Nothing
+-- measured this, so nothing could optimise for it. Hourly snapshot -> deltas get
+-- attributed to the replies posted in that window.
+CREATE TABLE IF NOT EXISTS follower_snapshot (
+  ts INTEGER PRIMARY KEY,
+  count INTEGER NOT NULL
+);
+
+-- Box-only state that exists NOWHERE else. targets.json and rejected_anchors.txt are
+-- git-ignored on purpose (they name real people and carry the read-provider's handle list),
+-- so they live on one Hetzner VM and nowhere else: 216 curated handles and 15 human
+-- judgements, hours of work, one disk failure from gone.
+-- backup.py existed but (a) was never scheduled and (b) backed up D1 — which Cloudflare
+-- already makes durable. It protected the safe thing and ignored the fragile one.
+-- Supermemory is deliberately NOT here: it is derivable from D1 + a style_mine run, and 6MB
+-- of re-derivable embeddings is not worth the row. This is 5KB of pure judgement.
+CREATE TABLE IF NOT EXISTS box_state (
+  k    TEXT PRIMARY KEY,          -- filename, e.g. "targets.json"
+  body TEXT NOT NULL,
+  ts   INTEGER NOT NULL
 );

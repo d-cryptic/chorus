@@ -6,6 +6,7 @@ import os, json, time, urllib.request
 
 def _req(url, method="GET", token=None, body=None, t=25):
     r = urllib.request.Request(url, data=json.dumps(body).encode() if body is not None else None, method=method)
+    r.add_header("user-agent", "chorus-box/1.0")
     r.add_header("content-type", "application/json")
     if token: r.add_header("authorization", "Bearer " + token)
     with urllib.request.urlopen(r, timeout=t) as resp: return json.loads(resp.read() or "{}")

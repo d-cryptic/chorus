@@ -4,7 +4,7 @@
 # sourced env file or Doppler:  e.g.  */... doppler run -- python3 /opt/chorus/box/ranker.py ...
 
 # 08:00 IST — rank today's candidates into the queue (local adapter)
-30 2 * * *  cd /opt/chorus/box && python3 ranker.py >> /var/log/chorus.log 2>&1
+30 2 * * *  cd /opt/chorus/box && python3 ranker.py --pages 1 >> /var/log/chorus.log 2>&1
 # 08:05 IST — Telegram digest + heartbeat
 35 2 * * *  cd /opt/chorus/box && python3 digest.py >> /var/log/chorus.log 2>&1
 # every 30 min — mirror new feedback (accept/reject) into Supermemory chorus:self
@@ -20,3 +20,8 @@
 # NOTE: telegram_bot.py is a long-running DAEMON (not cron) — run under systemd/pm2 when Telegram is enabled.
 # Sunday 06:00 IST — refresh the target list from your evolving network (keeps lists current)
 0 0 * * 0  cd /opt/chorus/box && python3 refresh_targets.py >> /var/log/chorus.log 2>&1
+0 5 * * *   /opt/chorus/box/run.sh python3 insights.py        >> /var/log/chorus.log 2>&1  # L1 analytics + change-gated L3 playbook
+0 3 * * 1   /opt/chorus/box/run.sh python3 style_mine.py      >> /var/log/chorus.log 2>&1  # weekly: what earns replies in your niche
+0 2 * * *   /opt/chorus/box/run.sh python3 post_gen.py        >> /var/log/chorus.log 2>&1  # what to POST (captures > trends > evergreen)
+*/10 * * * * /opt/chorus/box/run.sh python3 fast_lane.py --cap 2 >> /var/log/chorus.log 2>&1  # GROWTH: reply early to anchors (~$0.15/day)
+*/1 * * * * /opt/chorus/box/run.sh python3 fetch_watch.py >> /var/log/chorus.log 2>&1  # serves the dashboard Fetch button. 1min, not 5: the claim is ONE cheap GET, and 5min of dead air after a click reads as broken

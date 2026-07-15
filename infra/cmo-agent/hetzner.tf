@@ -51,6 +51,15 @@ resource "hcloud_server" "cmo" {
     ipv6_enabled = true
   }
 
+  # SAFETY: user_data only takes effect at FIRST BOOT, but the provider marks it
+  # ForceNew — so any drift (e.g. applying without the same TF_VAR_* secrets in env)
+  # silently plans "destroy + recreate" and would wipe the live box (/opt/chorus, the
+  # memory DB, cron). Ignoring it makes a stray `tofu apply` non-destructive. To
+  # genuinely re-provision, taint/replace the server deliberately.
+  lifecycle {
+    ignore_changes = [user_data, ssh_keys, image]
+  }
+
   # First-boot: install cloudflared (joins the tunnel with the provider-issued
   # token → auto-wires ingress), harden SSH, drop Hermes env, run the install cmd.
   user_data = templatefile("${path.module}/cloud-init.yaml.tftpl", {
@@ -61,7 +70,7 @@ resource "hcloud_server" "cmo" {
     hermes_install_cmd  = var.hermes_install_cmd
     openrouter_api_key  = var.openrouter_api_key
     supermemory_api_key = var.supermemory_api_key
-    candidate_api_key      = var.candidate_api_key
+    candidate_api_key   = var.candidate_api_key
     firecrawl_api_key   = var.firecrawl_api_key
     ingest_token        = var.ingest_token
     telegram_bot_token  = var.telegram_bot_token

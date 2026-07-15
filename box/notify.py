@@ -12,6 +12,7 @@ import os, json, urllib.request
 
 def _post(url, body, headers=None):
     r = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST")
+    r.add_header("user-agent", "chorus-box/1.0")
     r.add_header("content-type", "application/json")
     for k, v in (headers or {}).items():
         r.add_header(k, v)

@@ -4,12 +4,20 @@
 
 Env: INGEST_URL, INGEST_TOKEN, SUPERMEMORY_BASE_URL (self-host, default localhost:8000; key optional),
      CHORUS_STATE (last-seen ts file, default box/.mirror_state).
+
+RECOVERY -- if Supermemory is ever wiped or rebuilt: `rm box/.mirror_state`, then run this.
+With no state file `since` starts at 0, so it re-pulls every feedback row from D1 and rebuilds
+chorus:self + chorus:posts from scratch. That is why Supermemory is deliberately NOT in
+backup.py (see box/backup.py): it is derivable, and D1 is the source of truth. The watermark
+is the ONLY thing that decides what to mirror -- it does not know whether the memories it
+already wrote still exist, so a wipe with a surviving state file is a silent permanent gap.
 """
 import os, sys, json, time, argparse, urllib.request
 
 def _req(url, method="GET", token=None, body=None, timeout=20):
     data = json.dumps(body).encode() if body is not None else None
     r = urllib.request.Request(url, data=data, method=method)
+    r.add_header("user-agent", "chorus-box/1.0")
     r.add_header("content-type", "application/json")
     if token: r.add_header("authorization", f"Bearer {token}")
     with urllib.request.urlopen(r, timeout=timeout) as resp:
@@ -24,6 +32,22 @@ def to_memory(f):
         "metadata": {"kind": "feedback", "action": f["action"], "ts": f["ts"]},
     }
 
+def post_corpus_payload(f):
+    """A reply you actually posted -> chorus:posts. This is the ONLY ground truth about
+    how you really write (a draft you edited or dismissed is not). It powers voice RAG
+    and the repetition guard."""
+    # posted_text = final_text if edited, else the draft actually picked (draft_index).
+    # Requiring final_text meant a plain "posted" recorded NOTHING — 7 of 8 real posts were
+    # invisible to the corpus, so voice RAG and the repetition guard had no ground truth.
+    body = (f.get("posted_text") or f.get("final_text") or "").strip()
+    if not body or (f.get("action") or "") not in ("posted", "posted_edited"):
+        return None
+    return {"content": body, "containerTags": ["chorus:posts"],
+            "metadata": {"kind": "posted_reply", "to": f.get("author_handle"),
+                         "target": f.get("target"), "edited": f.get("action") == "posted_edited",
+                         "draft_index": f.get("draft_index"), "ts": f.get("ts")}}
+
+
 def run(args):
     base = os.environ.get("INGEST_URL", "http://localhost:8787").rstrip("/")
     token = os.environ.get("INGEST_TOKEN", "")
@@ -37,14 +61,35 @@ def run(args):
 
     rows = _req(f"{base}/api/box/feedback?since={since}", token=token).get("feedback", [])
     n = 0
+    corpus = 0
     for f in rows:
         payload = to_memory(f)
+        # a posted reply ALSO joins the ground-truth corpus (chorus:posts)
+        cp = post_corpus_payload(f)
         if args.dry_run:
             print("  would mirror:", payload["content"][:70])
+            if cp:
+                print("    + corpus:", cp["content"][:60])
         else:
             _req(sm_url, "POST", sm_key or None, payload)  # key optional (self-host)
+            if cp:
+                try:
+                    _req(sm_url, "POST", sm_key or None, cp); corpus += 1
+                except Exception as e:
+                    print(f"  corpus write failed (non-fatal): {repr(e)[:40]}")
         n += 1
-        since = max(since, f["ts"])
+        # Advance the watermark per ROW, not per posted reply. This used to sit inside
+        # `if corpus:` below, so a batch with no posted reply left `since` parked while the
+        # state file saved it anyway -> every later run re-fetched and re-POSTed the same
+        # rows. Found it live: 9 expiry rows had the watermark stuck for hours.
+        # It does NOT duplicate the corpus -- Supermemory dedupes on content hash (measured:
+        # the same payload 3x returns one id, one doc), which is also why the wipe-recovery
+        # above is safe to re-run. The cost is pure waste: 9 rows x 48 runs = ~432 pointless
+        # POSTs/day plus embedding CPU on a 2-core box, for zero new memory.
+        if not args.dry_run:
+            since = max(since, f["ts"])
+    if corpus:
+        print(f"  +{corpus} posted repl(y/ies) -> chorus:posts (voice RAG + repetition guard)")
     if not args.dry_run and rows:
         open(state, "w").write(str(since))
     print(f"mirrored {n} feedback rows (since={since})")
