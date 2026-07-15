@@ -325,3 +325,40 @@ broken image. Nothing fabricates media.
 | `IMGFLIP_USER`/`_PASS` | GENERATE a captioned meme (v0 mediaIntent='meme') | free |
 
 Run `python3 memes.py` to see live status.
+
+## Memory: BM25 retrieval, a real post corpus, and a repetition guard
+
+Three gaps closed. Chorus had **no memory of its own output** and its "search" was a
+substring match.
+
+**1. `memory_service` now ranks with BM25** (Okapi, stdlib+math, ~40 lines). The old
+`/v3/search` was `q in content.lower()`: it could not rank, missed morphology, and
+returned *nothing* for a multi-word query. `embed.py` existed but needed an OpenAI key
+this project does not have, so the semantic path was dead code. BM25 needs no key, no
+model, no deps. Proof: `"retrieval benchmark"` -> ranks the right doc at 1.12 where
+substring returned nothing. Honest limit: BM25 is **lexical** — `"gpu heat"` will not
+match `"thermally limited"`. True semantics needs embeddings, hence a key.
+
+**2. `chorus:posts` — a corpus of what you ACTUALLY posted.** `mirror_feedback` now
+mirrors every posted/edited reply into it. A draft you dismissed or rewrote is not
+evidence of your voice; a reply you shipped is. This is what makes v0's
+`searchSimilarPosts` real: `voice_context()` retrieves your own nearest posts by topic
+(BM25) and only falls back to the voice doc when the corpus is empty.
+
+**3. Repetition guard (`already_said`).** Chorus would happily re-suggest the same take
+every time a topic recurred — the fastest way to look like a bot. Every candidate is now
+checked against `chorus:posts` BEFORE we pay for a draft (free + cheap).
+
+Threshold, **measured against the live corpus, not guessed**:
+| case | score |
+|---|---|
+| same-topic | 1.73 |
+| near-duplicate | 1.15 – 1.44 |
+| related | 0.58 |
+| unrelated | 0.00 |
+
+-> `CHORUS_REPEAT_TAU=1.0`. **Caveat learned the hard way:** an absolute BM25 threshold is
+brittle — the *same* near-duplicate scored 1.44 and 1.15 depending on one extra shared
+word, and idf drifts as the corpus grows. A first pass at 1.2 silently caught nothing.
+So the tau is env-tunable and every **near-miss is logged**, so it can be re-derived from
+real data instead of vibes. Re-calibrate as `chorus:posts` grows.

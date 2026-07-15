@@ -11,7 +11,8 @@ Env: MEMORY_DB (default /opt/chorus/memory.db), MEMORY_PORT (8000),
      MEMORY_TOKEN (optional bearer; empty = open on localhost).
 """
 from __future__ import annotations
-import os, json, sqlite3, time, hashlib
+import os, json, sqlite3, time, hashlib, math, re
+from collections import Counter
 from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
@@ -28,6 +29,46 @@ def _db() -> sqlite3.Connection:
         metadata TEXT, created_at INTEGER NOT NULL)""")
     c.execute("CREATE INDEX IF NOT EXISTS idx_docs_created ON documents(created_at)")
     return c
+
+
+_WORD = re.compile(r"[a-z0-9']+")
+_STOP = {"the","a","an","and","or","but","if","then","to","of","in","on","for","with","is",
+         "are","was","were","be","been","it","this","that","i","you","we","they","my","your"}
+
+
+def _toks(t: str) -> list[str]:
+    return [w for w in _WORD.findall((t or "").lower()) if w not in _STOP and len(w) > 1]
+
+
+def bm25(query: str, docs: list[str], *, k1: float = 1.5, b: float = 0.75) -> list[float]:
+    """Okapi BM25. Substring matching ("q in content") was the old 'search': it could not
+    rank, missed morphology, and returned nothing for a multi-word query. BM25 is the
+    standard answer and needs no model, no API key and no deps — which matters because the
+    embedding path required an OpenAI key this project does not have, so it was dead code.
+    """
+    qt = _toks(query)
+    if not qt or not docs:
+        return [0.0] * len(docs)
+    dt = [_toks(d) for d in docs]
+    dl = [len(t) or 1 for t in dt]
+    avgdl = sum(dl) / len(dl)
+    N = len(docs)
+    df = Counter()
+    for t in dt:
+        for w in set(t):
+            df[w] += 1
+    scores = []
+    for i, toks in enumerate(dt):
+        tf = Counter(toks)
+        s = 0.0
+        for w in qt:
+            if w not in tf:
+                continue
+            # +1 smoothing keeps idf non-negative for terms in every doc
+            idf = math.log(1 + (N - df[w] + 0.5) / (df[w] + 0.5))
+            s += idf * (tf[w] * (k1 + 1)) / (tf[w] + k1 * (1 - b + b * dl[i] / avgdl))
+        scores.append(round(s, 5))
+    return scores
 
 
 def _has_tags(row_tags: str, want: list[str]) -> bool:
@@ -97,15 +138,23 @@ class Handler(BaseHTTPRequestHandler):
                 c.commit()
             return self._send(200, {"id": did, "status": "stored"})
         if path == "/v3/search":
-            q = (body.get("q") or body.get("query") or "").lower()
+            q = (body.get("q") or body.get("query") or "").strip()
             want = body.get("containerTags") or []
+            limit = int(body.get("limit") or 50)
             with closing(_db()) as c:
                 rows = c.execute("SELECT id,content,tags,metadata,created_at FROM documents "
                                  "ORDER BY created_at DESC").fetchall()
+            rows = [r for r in rows if not want or _has_tags(r[2], want)]
+            if not q:
+                hits = [(0.0, r) for r in rows]          # no query => recency
+            else:
+                hits = sorted(zip(bm25(q, [r[1] for r in rows]), rows),
+                              key=lambda x: -x[0])
+                hits = [h for h in hits if h[0] > 0] or []   # a 0 score is not a match
             res = [{"id": r[0], "content": r[1], "containerTags": json.loads(r[2]),
-                    "metadata": json.loads(r[3] or "{}"), "createdAt": r[4]}
-                   for r in rows
-                   if (not want or _has_tags(r[2], want)) and (not q or q in r[1].lower())][:50]
+                    "metadata": json.loads(r[3] or "{}"), "createdAt": r[4],
+                    "score": sc}
+                   for sc, r in hits[:limit]]
             return self._send(200, {"results": res, "count": len(res)})
         return self._send(404, {"error": "not found"})
 

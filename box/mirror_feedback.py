@@ -25,6 +25,18 @@ def to_memory(f):
         "metadata": {"kind": "feedback", "action": f["action"], "ts": f["ts"]},
     }
 
+def post_corpus_payload(f):
+    """A reply you actually posted -> chorus:posts. This is the ONLY ground truth about
+    how you really write (a draft you edited or dismissed is not). It powers voice RAG
+    and the repetition guard."""
+    body = (f.get("final_text") or "").strip()
+    if not body or (f.get("action") or "") not in ("posted", "posted_edited"):
+        return None
+    return {"content": body, "containerTags": ["chorus:posts"],
+            "metadata": {"kind": "posted_reply", "to": f.get("author_handle"),
+                         "edited": f.get("action") == "posted_edited", "ts": f.get("ts")}}
+
+
 def run(args):
     base = os.environ.get("INGEST_URL", "http://localhost:8787").rstrip("/")
     token = os.environ.get("INGEST_TOKEN", "")
@@ -38,13 +50,25 @@ def run(args):
 
     rows = _req(f"{base}/api/box/feedback?since={since}", token=token).get("feedback", [])
     n = 0
+    corpus = 0
     for f in rows:
         payload = to_memory(f)
+        # a posted reply ALSO joins the ground-truth corpus (chorus:posts)
+        cp = post_corpus_payload(f)
         if args.dry_run:
             print("  would mirror:", payload["content"][:70])
+            if cp:
+                print("    + corpus:", cp["content"][:60])
         else:
             _req(sm_url, "POST", sm_key or None, payload)  # key optional (self-host)
+            if cp:
+                try:
+                    _req(sm_url, "POST", sm_key or None, cp); corpus += 1
+                except Exception as e:
+                    print(f"  corpus write failed (non-fatal): {repr(e)[:40]}")
         n += 1
+    if corpus:
+        print(f"  +{corpus} posted repl(y/ies) -> chorus:posts (voice RAG + repetition guard)")
         since = max(since, f["ts"])
     if not args.dry_run and rows:
         open(state, "w").write(str(since))

@@ -295,10 +295,58 @@ def voice_context(topic, *, limit=3):
         except Exception:
             return []
 
-    hits = _search(topic or "")
+    def _search_tag(q, tag):
+        try:
+            out = _req(f"{base}/v3/search", "POST", key or None,
+                       {"q": q, "containerTags": [tag], "limit": limit}, timeout=8)
+            return [r.get("content", "")[:300] for r in (out.get("results") or [])]
+        except Exception:
+            return []
+
+    # your OWN posted replies nearest this topic — real few-shot, ranked by BM25
+    hits = _search_tag(topic or "", "chorus:posts")
+    if len(hits) < limit:
+        hits += _search(topic or "")          # then voice/profile docs
     if not hits and topic:
-        hits = _search("")  # fall back to whatever voice we have stored
+        hits = _search("")                    # last resort: whatever voice exists
     return hits[:limit]
+
+
+def already_said(text, *, threshold=None):
+    """Have you already posted about this? Returns (closest_past_reply, score) or None.
+
+    Chorus had no memory of its own output, so it would re-suggest the same take every
+    time a topic recurred — the fastest way to look like a bot. BM25 over chorus:posts
+    (what you ACTUALLY posted) catches it.
+
+    Threshold calibrated against the live corpus, MEASURED not guessed:
+        same-topic 1.73 · near-duplicate 1.15-1.44 | related 0.58 · unrelated 0.00
+    -> 1.0 separates "already made this point" from "adjacent topic".
+
+    CAVEAT (learned the hard way): an absolute BM25 threshold is brittle. The same
+    near-duplicate scored 1.44 and 1.15 depending on ONE extra shared word, and idf
+    shifts as the corpus grows — a first pass at 1.2 silently caught nothing. So:
+    env-tunable via CHORUS_REPEAT_TAU, and every NEAR-MISS is logged too, so the value
+    can be re-derived from real data rather than vibes.
+    """
+    if threshold is None:
+        threshold = float(os.environ.get("CHORUS_REPEAT_TAU", "1.0"))
+    base = os.environ.get("SUPERMEMORY_BASE_URL", "http://localhost:8000").rstrip("/")
+    key = os.environ.get("SUPERMEMORY_API_KEY", "")
+    try:
+        out = _req(f"{base}/v3/search", "POST", key or None,
+                   {"q": text[:280], "containerTags": ["chorus:posts"], "limit": 1}, timeout=8)
+        r = (out.get("results") or [])
+        if not r:
+            return None
+        sc = float(r[0].get("score") or 0)
+        if sc >= threshold:
+            return r[0].get("content", "")[:120], sc
+        if sc >= threshold * 0.7:   # near-miss: surface it so the tau can be tuned
+            print(f"  (repeat near-miss {sc:.2f} < tau {threshold}: {r[0].get('content','')[:44]!r})")
+    except Exception:
+        pass   # memory down must never block a cycle
+    return None
 
 
 def recent_authors(base, token):
@@ -444,7 +492,8 @@ def run(args):
 
     caps = G.CapState(max_per_day=args.cap,
                       recent={} if args.dry_run else recent_authors(base, token))
-    routed = {"reply": 0, "quote": 0, "retweet": 0, "drop_pre": 0, "drop_post": 0, "capped": 0}
+    routed = {"reply": 0, "quote": 0, "retweet": 0, "drop_pre": 0, "drop_post": 0,
+              "capped": 0, "repeat": 0}
     emitted = 0; llm_calls = 0; stop_reason = None
     for (pre, pillar, comps), c in top:
         # --- cheap gates BEFORE we pay for a draft -------------------------
@@ -455,6 +504,14 @@ def run(args):
         if not ok:
             routed["capped"] += 1
             continue
+        # cheap + free: skip before paying for a draft you have effectively already posted
+        if not args.dry_run:
+            dup = already_said(c.get("text") or "")
+            if dup:
+                past, sc = dup
+                routed["repeat"] += 1
+                print(f"  skip @{c.get('author')} [repeat {sc:.2f}]: already said — {past[:56]!r}")
+                continue
         # THE gate: re-checked before EVERY paid call, so a long cycle cannot blow
         # the ceiling mid-run (the old code checked once, before the loop).
         if not args.dry_run:
