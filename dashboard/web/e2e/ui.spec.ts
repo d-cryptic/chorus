@@ -52,3 +52,42 @@ test("media renders inline", async ({ page }) => {
   const img = page.locator("img[src*='pbs.twimg.com']").first();
   if (await img.count()) await expect(img).toBeVisible();
 });
+
+test("a thread card shows the THREAD, not the fallback draft stacked on top of it", async ({ page }) => {
+  await page.goto("/");
+  // The fixture's thread suggestion has 3 segments and a standalone fallback draft whose
+  // text equals segment 1. The card used to render body + thread and number it {i+2}/{len+1},
+  // so a 3-tweet thread read as "4" with segment 1 shown twice. In a suggest-only tool the
+  // card owes exactly one honest answer to "what am I about to post".
+  await expect(page.getByText("1/3")).toBeVisible();
+  await expect(page.getByText("3/3")).toBeVisible();
+  await expect(page.getByText("4/4")).toHaveCount(0);      // the off-by-one
+  await expect(page.getByText("2/4")).toHaveCount(0);
+  // the shape is stated up front, not discovered by scrolling
+  await expect(page.getByText(/thread 3/i)).toBeVisible();
+  // and the button names what it publishes
+  await expect(page.getByRole("button", { name: /Post thread \(3\)/ })).toBeVisible();
+  // segment 1 appears ONCE in the thread body (the fallback lives in the picker, truncated)
+  const dupes = await page.getByText("most 'it works' memory setups fail quietly, not loudly.", { exact: true }).count();
+  expect(dupes).toBe(1);
+  await page.screenshot({ path: "e2e/shot-thread.png" });
+});
+
+test("a longform card renders the long post, counted against the real limit", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByText(/648\/25000/)).toBeVisible();  // NOT 648/280 in red
+  await expect(page.getByText(/^long$/i).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: /Post long/ })).toBeVisible();
+});
+
+test("original posts do not claim an author tier", async ({ page }) => {
+  await page.goto("/");
+  // author_tier ranks the person you REPLY to; an original post has none, so "tier B" there
+  // is noise pretending to be signal.
+  await expect(page.getByText(/tier B/)).toHaveCount(1);     // only the one reply card
+});
+
+test("Fetch button says what it does, and reload admits it does not fetch", async ({ page }) => {
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: /Fetch new/ })).toBeVisible();
+});

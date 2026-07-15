@@ -24,4 +24,4 @@
 0 3 * * 1   /opt/chorus/box/run.sh python3 style_mine.py      >> /var/log/chorus.log 2>&1  # weekly: what earns replies in your niche
 0 8 * * *   /opt/chorus/box/run.sh python3 post_gen.py        >> /var/log/chorus.log 2>&1  # what to POST (captures > trends > evergreen)
 */10 * * * * /opt/chorus/box/run.sh python3 fast_lane.py --cap 2 >> /var/log/chorus.log 2>&1  # GROWTH: reply early to anchors (~$0.15/day)
-*/5 * * * * /opt/chorus/box/run.sh python3 fetch_watch.py >> /var/log/chorus.log 2>&1  # serves the dashboard Refresh button (Worker has no provider key)
+*/1 * * * * /opt/chorus/box/run.sh python3 fetch_watch.py >> /var/log/chorus.log 2>&1  # serves the dashboard Fetch button. 1min, not 5: the claim is ONE cheap GET, and 5min of dead air after a click reads as broken

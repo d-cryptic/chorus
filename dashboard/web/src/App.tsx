@@ -46,6 +46,7 @@ export default function App() {
   const [dismissing, setDismissing] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
   const [fetching, setFetching] = useState(false);
+  const [fetchState, setFetchState] = useState<null | "queued" | "running">(null);
   const undoRef = useRef<any>(null);
   const seenFast = useRef<Set<string>>(new Set());
   const [notify, setNotify] = useState<boolean>(
@@ -186,15 +187,50 @@ export default function App() {
     return () => window.removeEventListener("keydown", h);
   }, [items, cursor, pick, editing, dismissing]);
 
-  /** The Worker has no provider key by design, so it raises a flag and the box (which
-   *  owns the keys) runs the real cycle within ~5m. */
+  /** The Worker holds no provider key by design, so it cannot fetch: it raises a flag and
+   *  the box (which owns the keys) claims it within ~1m and runs a real cycle.
+   *
+   *  This used to fire-and-forget then blind-reload after 90s -- against a 5-minute cron, so
+   *  it reliably reloaded BEFORE anything had happened, found nothing, and looked broken.
+   *  Now we watch run_log via /api/status and report what actually occurred: claimed ->
+   *  running -> N new. If the box never picks it up we say THAT, rather than silently
+   *  showing a stale queue. */
   const fetchNow = async () => {
     setFetching(true);
+    const baseline = await api(`/api/status`).then((r: any) => r?.lastRun?.started_at ?? 0).catch(() => 0);
     try {
       await post(`/api/fetch`, {});
-      toast("Fetch queued — the box runs a cycle within ~5 min", { duration: 5000 });
     } catch { toast.error("Could not queue a fetch"); setFetching(false); return; }
-    setTimeout(() => { setFetching(false); load(); }, 90000);
+    setFetchState("queued");
+
+    const started = Date.now();
+    const DEADLINE = 4 * 60000;     // box claims every ~1m; 4m means it is genuinely not running
+    let sawRun = false;
+    const tick = async () => {
+      if (Date.now() - started > DEADLINE) {
+        setFetching(false); setFetchState(null);
+        toast.error(sawRun ? "The box started a cycle but never finished it — check /var/log/chorus.log"
+                           : "The box never picked this up. Is the fetch_watch cron alive?",
+                    { duration: 8000 });
+        return;
+      }
+      const st: any = await api(`/api/status`).catch(() => null);
+      const run = st?.lastRun;
+      if (run?.started_at && run.started_at > baseline) {
+        sawRun = true;
+        if (run.finished_at) {                       // a full cycle completed
+          setFetching(false); setFetchState(null);
+          await load();
+          if (run.error) toast.error(`Cycle failed: ${String(run.error).slice(0, 80)}`, { duration: 8000 });
+          else toast.success(run.suggested ? `${run.suggested} new suggestion${run.suggested === 1 ? "" : "s"}`
+                                           : "Cycle ran — nothing new cleared the bar", { duration: 5000 });
+          return;
+        }
+        setFetchState("running");                    // claimed, still working
+      }
+      setTimeout(tick, 2500);
+    };
+    setTimeout(tick, 2000);
   };
 
   const setSetting = async (patch: any) => {
@@ -257,7 +293,7 @@ export default function App() {
                   <RefreshCw size={16} style={{ color: DIM }} />
                 </button>
               </TooltipTrigger>
-              <TooltipContent>reload the queue</TooltipContent>
+              <TooltipContent>re-read the queue from the database. Does NOT fetch new tweets — use "Fetch new" for that.</TooltipContent>
             </Tooltip>
             <Tooltip>
               <TooltipTrigger asChild>
@@ -265,10 +301,13 @@ export default function App() {
                   className="ml-1.5 rounded-full px-3 py-1.5 text-[12.5px] font-medium disabled:opacity-40
                              flex items-center gap-1.5 transition-colors hover:bg-[var(--secondary)]"
                   style={{ border: "1px solid var(--border)", color: "var(--muted-foreground)" }}>
-                  <Download size={12.5} /> {fetching ? "Fetching…" : "Fetch"}
+                  <Download size={12.5} className={fetching ? "animate-pulse" : undefined} />
+                  {fetchState === "running" ? "Box is fetching…"
+                    : fetchState === "queued" ? "Waiting for box…"
+                    : "Fetch new"}
                 </button>
               </TooltipTrigger>
-              <TooltipContent>pull new tweets + replies now (runs a real cycle, ~1-2 min)</TooltipContent>
+              <TooltipContent>pull new tweets + replies from X now. The box claims this within ~1 min and runs a real cycle.</TooltipContent>
             </Tooltip>
           </div>
         </header>
@@ -333,6 +372,10 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
   const drafts: string[] = parse(s.drafts, []);
   const thread: string[] = parse(s.thread, []);
   const longform: string = s.longform || "";   // Premium Plus single post; depth without separable beats
+  // What this card actually publishes. Mirrors post_gen.classify_shape so the UI and the
+  // generator cannot disagree about what a suggestion IS.
+  const shape: "post" | "thread" | "longform" =
+    longform ? "longform" : thread.length > 0 ? "thread" : "post";
   const url = s.tweet_url || (s.tweet_id ? `https://x.com/i/web/status/${s.tweet_id}` : null);
   const body = drafts[pick] ?? "";
   const [text, setText] = useState(body);
@@ -358,8 +401,21 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
         <span className="tabular-nums" style={{ color: scoreColor(s.score) }}>{s.score.toFixed(2)}</span>
         <span>·</span>
         <span className="uppercase tracking-[0.08em]" style={{ color: "var(--muted-foreground)" }}>{s.target || "reply"}</span>
+        {shape !== "post" && (
+          <>
+            <span>·</span>
+            {/* the shape is the single most consequential fact about a suggestion and it was
+                nowhere in the meta row: "POST" reads identically for a one-liner and a
+                5-tweet thread. */}
+            <span className="uppercase tracking-[0.08em] font-semibold" style={{ color: "var(--primary)" }}>
+              {shape === "thread" ? `thread ${thread.length}` : "long"}
+            </span>
+          </>
+        )}
         {s.pillar && <><span>·</span><span>{s.pillar}</span></>}
-        {s.author_tier && <><span>·</span><span>tier {s.author_tier}</span></>}
+        {/* author_tier ranks the person you are REPLYING to. An original post has no such
+            person, so "tier B" there is noise pretending to be signal. */}
+        {s.author_tier && !isPost && <><span>·</span><span>tier {s.author_tier}</span></>}
         {url && <a href={url} target="_blank" className="ml-auto hover:underline" style={{ color: DIM }}>on X (o)</a>}
       </div>
       {/* the angle is WHY this was picked — the fastest "is it worth it?" signal */}
@@ -404,34 +460,44 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
             </div>
           ) : (
             <>
-              <Tweet handle={ME} text={body} replyingTo={isPost ? undefined : s.author_handle}
-                     ts={Date.now()} connector={thread.length > 0}>
-                {s.gif && <GifChip q={s.gif} />}
-                <div className="mt-2"><Counter text={body} /></div>
-              </Tweet>
-              {longform && (
-                <Tweet handle={ME} text={longform} ts={Date.now()}>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Counter text={longform} limit={25000} />
-                    <span className="text-[11px] font-mono px-1.5 py-0.5 rounded"
-                          style={{ color: "var(--primary)", border: "1px solid var(--border)" }}>LONG</span>
-                  </div>
+              {/* ONE card renders ONE artifact: exactly what pressing Post publishes.
+                  It used to stack the standalone fallback draft AND the thread AND the
+                  longform, numbered {i+2}/{len+1} as if the fallback were thread tweet 1 --
+                  so a 3-tweet thread read as "4", with its first segment shown twice. In a
+                  suggest-only tool the ONE thing the card owes you is an unambiguous answer
+                  to "what am I about to post". The fallback is an alternative, not a part of
+                  it, so it lives in the picker below with the other drafts. */}
+              {shape === "longform" ? (
+                <Tweet handle={ME} text={longform} replyingTo={isPost ? undefined : s.author_handle}
+                       ts={Date.now()}>
+                  {s.gif && <GifChip q={s.gif} />}
+                  <div className="mt-2"><Counter text={longform} limit={25000} /></div>
+                </Tweet>
+              ) : shape === "thread" ? (
+                thread.map((t, i) => (
+                  <Tweet key={i} handle={ME} text={t}
+                         replyingTo={i === 0 && !isPost ? s.author_handle : undefined}
+                         ts={Date.now()} connector={i < thread.length - 1}>
+                    {i === 0 && s.gif && <GifChip q={s.gif} />}
+                    <div className="mt-2 flex items-center gap-2">
+                      <Counter text={t} />
+                      <span className="text-[13px] font-mono" style={{ color: DIM }}>{i + 1}/{thread.length}</span>
+                    </div>
+                  </Tweet>
+                ))
+              ) : (
+                <Tweet handle={ME} text={body} replyingTo={isPost ? undefined : s.author_handle}
+                       ts={Date.now()}>
+                  {s.gif && <GifChip q={s.gif} />}
+                  <div className="mt-2"><Counter text={body} /></div>
                 </Tweet>
               )}
-              {thread.map((t, i) => (
-                <Tweet key={i} handle={ME} text={t} ts={Date.now()} connector={i < thread.length - 1}>
-                  <div className="mt-2 flex items-center gap-2">
-                    <Counter text={t} />
-                    <span className="text-[13px] font-mono" style={{ color: DIM }}>{i + 2}/{thread.length + 1}</span>
-                  </div>
-                </Tweet>
-              ))}
               {/* draft picker — one full render, the rest collapsed. 3 stacked fake tweets
                   triples scroll and makes the real target tweet visually equal to drafts. */}
-              {drafts.length > 1 && (
+              {(drafts.length > 1 || shape !== "post") && (
                 <div className="px-4 pb-2">
                   {(order || drafts.map((_: any, k: number) => k)).map((real: number, posn: number) =>
-                    real === pick ? null : (
+                    (real === pick && shape === "post") ? null : (
                     <button key={real} onClick={() => setPick(real)}
                       className="block w-full text-left text-[12.5px] py-1.5 pl-[52px] pr-2 truncate transition-colors hover:text-[var(--foreground)]"
                       style={{ color: "var(--muted-foreground)" }}>
@@ -462,7 +528,10 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
           <button onClick={() => postOnX(s)}
                   className="rounded-full px-4 py-1.5 text-[13.5px] font-semibold transition-transform active:scale-[.97]"
                   style={{ background: "var(--x-blue)", color: "#fff" }}>   {/* X-native action: the one sanctioned use */}
-            {isRT ? "Retweet on X" : isPost ? "Post this" : "Post on X"} <span className="opacity-60">(p)</span>
+            {isRT ? "Retweet on X"
+              : shape === "thread" ? `Post thread (${thread.length})`
+              : shape === "longform" ? "Post long"
+              : isPost ? "Post this" : "Post on X"} <span className="opacity-60">(p)</span>
           </button>
           {!isRT && <button onClick={() => setEditing(true)} className="rounded-full px-4 py-1.5 text-[13.5px] font-medium transition-colors hover:bg-[var(--secondary)]"
                     style={{ border: `1px solid var(--border)`, color: "var(--foreground)" }}>Edit (e)</button>}

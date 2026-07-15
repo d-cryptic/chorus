@@ -3,7 +3,10 @@
 
 The Worker has no provider key (and must not — it is internet-facing), so it cannot
 fetch tweets itself. The dashboard's Fetch button raises settings.fetch_now; this runs
-every 5m, claims the flag atomically (claim clears it), and runs one real cycle.
+every 1m, claims the flag atomically (claim clears it), and runs one real cycle.
+5m was the old cadence and it made the dashboard feel broken: you click Fetch, nothing
+visibly happens for up to five minutes, so you click again. The claim is a single cheap
+GET, so the cadence was never a cost decision.
 """
 import os, subprocess, sys, urllib.request, json
 
