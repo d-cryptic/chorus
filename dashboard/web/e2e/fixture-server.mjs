@@ -22,7 +22,7 @@ const S = (o) => ({
   thread: JSON.stringify(o.thread ?? []), longform: o.longform ?? null,
   media: JSON.stringify(o.media ?? []), gif: null,
   rationale: "20m old, 0 replies", target: o.target ?? "reply",
-  status: "queued", created_at: now - (o.age ?? 20) * 60000,
+  status: o.status ?? "queued", verified: o.verified, created_at: now - (o.age ?? 20) * 60000,
 });
 
 const DATA = {
@@ -35,10 +35,15 @@ const DATA = {
     S({ id: "2", author: "eatonphil", text: "Three ways a self-hosted memory engine silently breaks.", age: 48, target: "post",
         thread: ["most 'it works' memory setups fail quietly, not loudly.", "cosine and BM25 do not share a scale. a threshold tuned on one silently disables the other.", "list endpoints that return empty content make dedupe a no-op."],
         drafts: ["most 'it works' memory setups fail quietly, not loudly."] }),
+    S({ id: "4", author: "TheAhmadOsman", text: "shipped it", target: "reply", status: "posted", verified: 1,
+        drafts: ["local AI is undeniably huge. ngl, the skill set here is clutch."] }),
+    S({ id: "5", author: "sh_reya", text: "clicked but never sent", target: "reply", status: "posted", verified: 0,
+        drafts: ["yes and no. branding matters, but tools amplify it."] }),
     S({ id: "3", author: "risingsayak", text: "Why a high follower floor is a timezone filter in disguise.", age: 90, target: "post",
         longform: "picking anchors by follower count feels like quality control. it isn't. ".repeat(9),
         drafts: ["a follower floor is a timezone filter wearing a quality-control hat."] }),
   ]},
+  "/api/posted": { counts: {}, suggestions: [] },
   "/api/status": { lastRun: { started_at: now - 240000, finished_at: now - 200000, suggested: 3, error: null, credits: 981000 }, alerts: [], creditsPerDay: 12400, provider: { name: "example-provider", url: "https://example.invalid" } },
   "/api/settings": { settings: { paused: 0, killed: 0, autonomy: "suggest", daily_ceiling_usd: 0.65, quiet_hours: "0-7" } },
   "/api/spend": { total: 0.5063 },

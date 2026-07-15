@@ -84,7 +84,15 @@ test("original posts do not claim an author tier", async ({ page }) => {
   await page.goto("/");
   // author_tier ranks the person you REPLY to; an original post has none, so "tier B" there
   // is noise pretending to be signal.
-  await expect(page.getByText(/tier B/)).toHaveCount(1);     // only the one reply card
+  // Assert the RULE, not a count: an exact count couples this test to the fixture's
+  // composition, so adding an unrelated reply row broke it while the rule still held.
+  // NB: the meta renders "POST" via CSS uppercase, so textContent is "post". allTextContents()
+  // reads RAW text (innerText would respect the transform) — match case-insensitively.
+  const postMetas = await page.locator("div.mono").filter({ hasText: /post/i }).allTextContents();
+  expect(postMetas.length).toBeGreaterThan(0);               // the fixture really has posts
+  for (const m of postMetas) expect(m).not.toContain("tier");
+  const replyMetas = await page.locator("div.mono").filter({ hasText: /reply/i }).allTextContents();
+  expect(replyMetas.some((m) => m.includes("tier"))).toBe(true);   // replies still show it
 });
 
 test("Fetch button says what it does, and reload admits it does not fetch", async ({ page }) => {
@@ -175,4 +183,14 @@ test("the read provider is never named in the bundle — it comes from config", 
   // Belt and braces with no name in the file: the bundle must not embed ANY third-party
   // API host. Our own worker is same-origin, so a hardcoded external api.* host is a smell.
   expect(src).not.toMatch(/https:\/\/api\.[a-z0-9-]+\.(io|com)\/twitter/i);
+});
+
+test("the Posted tab admits which drafts actually reached X", async ({ page }) => {
+  await page.goto("/");
+  // "posted" in Chorus means the user CLICKED Post on X. The intent URL only OPENS X's
+  // composer; they still have to hit Post there. Measured against their real timeline:
+  // only 4 of 10 "posted" suggestions exist on X. The tab said "10 posted" and meant 4.
+  // exact: the tooltip also ends with "...or it never sent", so a loose match hits both
+  await expect(page.getByText("✓ live", { exact: true }).first()).toBeVisible();
+  await expect(page.getByText("never sent", { exact: true })).toBeVisible();
 });

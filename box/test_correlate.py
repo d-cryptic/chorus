@@ -120,5 +120,22 @@ def run():
     # and it must still COUNT: a click is a real preference signal, just a weaker one
     chk("w *= 0.0" not in rsrc, "a click is not discarded — they liked it enough to open X")
 
+    # --- outcome_track wrote orphan rows for the life of the file -----------------------
+    # /api/box/feedback selected f.id (the FEEDBACK row's autoincrement) and never s.id, so
+    #     sid = f.get("suggestion_id") or f.get("id")
+    # silently fell back to 15/13/22/16. Those rows join to NO suggestion, so `verified` was
+    # always 0 and rank_tune's engagement signal was permanently empty — while the log
+    # cheerfully printed "matched+measured 4". The code had anticipated the right key; the
+    # endpoint just never sent it.
+    import inspect
+    osrc = inspect.getsource(__import__("outcome_track"))
+    chk('sid = f.get("suggestion_id")' in osrc, "keys the write on the real suggestion_id")
+    chk('or f.get("id")' not in osrc,
+        "NO fallback to f.id — that silently wrote orphans instead of failing visibly")
+    chk("endpoint bug" in osrc, "a missing suggestion_id is reported, not papered over")
+    # discovery must cover posts/quotes, not just replies (7 of 10 were invisible)
+    chk("-filter:replies" in osrc, "discovers originals AND quotes")
+    chk("filter:replies" in osrc, "still discovers replies")
+
     print(f"CORRELATE UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())

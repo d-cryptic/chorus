@@ -77,11 +77,16 @@ async function human(req: Request, env: Env, url: URL): Promise<Response> {
       const limit = Math.min(Number(url.searchParams.get("limit") ?? 50) || 50, 200);
       const now = Date.now();
       const { results } = await env.DB.prepare(
-        `SELECT * FROM suggestion
-           WHERE (status = ?1 OR (status='snoozed' AND snooze_until IS NOT NULL AND snooze_until <= ?2))
-             AND (expires_at IS NULL OR expires_at > ?2)
-             AND (?4 IS NULL OR target = ?4)
-           ORDER BY score DESC LIMIT ?3`
+        // `verified`: outcome_track writes an outcome row ONLY for suggestions it actually
+        // FOUND on the user's timeline. "Post on X" opens an intent URL — it merely opens X's
+        // composer, and the user still has to hit Post there. Measured: only 4 of 10 "posted"
+        // suggestions exist on X. Without this the Posted tab reports 10 and means 4.
+        `SELECT s.*, (o.suggestion_id IS NOT NULL) AS verified, o.likes AS o_likes, o.replies AS o_replies
+           FROM suggestion s LEFT JOIN outcome o ON o.suggestion_id = s.id
+           WHERE (s.status = ?1 OR (s.status='snoozed' AND s.snooze_until IS NOT NULL AND s.snooze_until <= ?2))
+             AND (s.expires_at IS NULL OR s.expires_at > ?2)
+             AND (?4 IS NULL OR s.target = ?4)
+           ORDER BY s.score DESC LIMIT ?3`
       ).bind(status, now, limit, tgt).all();
       const { results: cRows } = await env.DB.prepare(
         "SELECT status, COUNT(*) n FROM suggestion GROUP BY status"
@@ -257,7 +262,10 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       // RAG and the repetition guard of the real ground truth.
       // s.thread/s.longform: without these the insights engine cannot see SHAPE at all, so
       // winning_shape would silently correlate nothing. s.pillar likewise.
-      "SELECT f.id, f.action, f.final_text, f.reason, f.ts, s.author_handle, s.angle, s.factors, s.drafts, s.draft_index, s.target, s.thread, s.longform, s.pillar, o.likes, o.replies, " +
+      // f.suggestion_id is REQUIRED: outcome_track keys its write on it and fell back to f.id
+      // (the feedback row's autoincrement) when it was absent, writing orphan outcome rows
+      // keyed "15.0"/"13.0" that join to nothing. Outcome measurement never once worked.
+      "SELECT f.id, f.suggestion_id, f.action, f.final_text, f.reason, f.ts, s.author_handle, s.angle, s.factors, s.drafts, s.draft_index, s.target, s.thread, s.longform, s.pillar, o.likes, o.replies, " +
       "COALESCE(f.final_text, json_extract(s.drafts, '$[' || COALESCE(s.draft_index,0) || ']')) AS posted_text " +
       "FROM feedback f JOIN suggestion s ON s.id=f.suggestion_id LEFT JOIN outcome o ON o.suggestion_id=s.id WHERE f.ts > ? ORDER BY f.ts LIMIT 500"
       ).bind(since).all();
@@ -270,7 +278,7 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       // expires and that says nothing about their taste. So we hand the box expires_at and
       // let it decide (it has the activity timeline); we do NOT fabricate a feedback row.
       const { results: expired } = await env.DB.prepare(
-        "SELECT s.id, 'expired' AS action, NULL AS final_text, NULL AS reason, s.expires_at AS ts, " +
+        "SELECT s.id, s.id AS suggestion_id, 'expired' AS action, NULL AS final_text, NULL AS reason, s.expires_at AS ts, " +
         "s.author_handle, s.angle, s.factors, s.drafts, s.draft_index, s.target, s.thread, s.longform, s.pillar, " +
         "NULL AS likes, NULL AS replies, NULL AS posted_text " +
         "FROM suggestion s WHERE s.status='expired' AND s.expires_at > ? ORDER BY s.expires_at LIMIT 500"

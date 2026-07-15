@@ -16,6 +16,7 @@ type Sug = {
   author_handle: string; author_tier?: string; score: number; pillar?: string;
   angle?: string; drafts: string; factors?: string; target?: string;
   gif?: string | null; thread?: string; media?: string; created_at?: number;
+  verified?: number;   // outcome_track FOUND it on X — 'posted' alone only means clicked
 };
 
 const api = (p: string) => fetch(p, { credentials: "same-origin" }).then((r) => r.json());
@@ -439,7 +440,21 @@ function Card({ s, i, focused, onFocus, order, pick, setPick, editing, setEditin
         {/* author_tier ranks the person you are REPLYING to. An original post has no such
             person, so "tier B" there is noise pretending to be signal. */}
         {s.author_tier && !isPost && <><span>·</span><span>tier {s.author_tier}</span></>}
-        {url && <a href={url} target="_blank" className="ml-auto hover:underline" style={{ color: DIM }}>on X (o)</a>}
+        {/* "posted" in Chorus means the user CLICKED Post on X. The intent URL only opens X's
+            composer; they still have to hit Post there. Measured: 4 of 10 actually shipped.
+            The tab said "10 posted" and meant 4, so the badge says which. */}
+        {s.status === "posted" && (
+          <span className="ml-auto mr-2 text-[10.5px] font-mono px-1.5 py-0.5 rounded"
+                style={s.verified
+                  ? { color: "var(--primary)", border: "1px solid var(--border)" }
+                  : { color: "var(--warning)", border: "1px dashed var(--border)" }}
+                title={s.verified
+                  ? "found on your timeline: this one really shipped"
+                  : "you opened X with this, but it is not on your timeline. Either you changed your mind at the composer, or it never sent."}>
+            {s.verified ? "✓ live" : "never sent"}
+          </span>
+        )}
+        {url && <a href={url} target="_blank" className={s.status === "posted" ? "hover:underline" : "ml-auto hover:underline"} style={{ color: DIM }}>on X (o)</a>}
       </div>
       {/* the angle is WHY this was picked — the fastest "is it worth it?" signal */}
       {s.angle && (

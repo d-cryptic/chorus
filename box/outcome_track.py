@@ -102,7 +102,14 @@ def main():
             best, sc = match(t.get("text") or "", [f["posted_text"]])
             if not best:
                 continue
-            sid = f.get("suggestion_id") or f.get("id")
+            # NOT `or f.get("id")`: f.id is the FEEDBACK row's autoincrement, and falling back
+            # to it wrote orphan outcome rows keyed "15.0"/"13.0" that join to no suggestion.
+            # Outcome measurement silently produced nothing for the life of this file. If the
+            # endpoint stops sending suggestion_id, that is a bug to see, not to paper over.
+            sid = f.get("suggestion_id")
+            if not sid:
+                print("  outcome: feedback row has no suggestion_id — skipping (endpoint bug)")
+                continue
             try:
                 _req(f"{base}/api/box/outcome", "POST", tok,
                      {"suggestion_id": sid,
@@ -114,7 +121,7 @@ def main():
                 pass
             break
         seen += 1
-    print(f"discovered {len(mine)} of your replies, matched+measured {d} (no URL needed)")
+    print(f"discovered {len(mine)} of your tweets (replies + originals), matched+measured {d} (no URL needed)")
 
 if __name__ == "__main__":
     main()
