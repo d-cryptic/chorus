@@ -83,5 +83,14 @@ def run():
     chk("box_state" in src, "the box-state backup endpoint exists")
     chk("ON CONFLICT(k) DO UPDATE" in src, "a re-backup UPDATES rather than erroring")
 
+    # insights decay: status honored (not resurrected to 'active'), created_at preserved
+    if "INSERT INTO insight" in src:
+        seg = src[src.index("INSERT INTO insight"): src.index("INSERT INTO insight") + 700]
+        chk("VALUES (?,?,?,?,?,?,?,?,?,?,?)" in seg,
+            "insight status is a bind, not literal 'active' (decayed claims were resurrected)")
+        chk("status=excluded.status" in seg, "ON CONFLICT honors posted status (decayed stays decayed)")
+        chk("created_at=excluded.created_at" not in seg,
+            "created_at NOT reset on UPDATE (else decay age resets to 0 and decay never progresses)")
+
     print(f"WORKER SQL UNIT: {p} passed, {f} failed"); return f
 import sys; sys.exit(run())

@@ -326,14 +326,20 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       for (const i of list) {
         if (!i?.id || !i?.kind) continue;
         await env.DB.prepare(
+          // status comes from the payload, not hardcoded. insights.py apply_decay() marks
+          // sub-floor claims "decayed" and POSTs them back; forcing 'active' here resurrected
+          // them, so /api/insights (WHERE status='active') served stale claims forever.
+          // created_at is preserved on UPDATE (only set on first INSERT): decay computes age
+          // from created_at, so resetting it to `now` every pass meant age~0 and decay NEVER
+          // progressed. The claim's BIRTH date must survive re-confirmation.
           `INSERT INTO insight (id, kind, scope, subject_id, term, payload, confidence, evidence, status, fingerprint, created_at)
-           VALUES (?,?,?,?,?,?,?,?,'active',?,?)
+           VALUES (?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, confidence=excluded.confidence,
-             evidence=excluded.evidence, status='active', fingerprint=excluded.fingerprint,
-             created_at=excluded.created_at, superseded_by=NULL`
+             evidence=excluded.evidence, status=excluded.status, fingerprint=excluded.fingerprint,
+             superseded_by=NULL`
         ).bind(i.id, i.kind, i.scope ?? "user", i.subject_id ?? null, i.term ?? null,
                JSON.stringify(i.payload ?? {}), Number(i.confidence ?? 0),
-               JSON.stringify(i.evidence ?? []), fp, now).run();
+               JSON.stringify(i.evidence ?? []), i.status ?? "active", fp, now).run();
       }
       return json({ stored: list.length });
     }
