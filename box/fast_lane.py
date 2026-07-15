@@ -100,15 +100,18 @@ def main():
     tf = os.path.join(os.path.dirname(os.path.abspath(__file__)), "targets.json")
     d = json.load(open(tf)) if os.path.exists(tf) else {}
     # anchors first (reach), then the top peers. NARROW on purpose: 1 chunked query.
-    anchors = (d.get("targets_b") or [])[:8] + (d.get("targets_a") or [])[:4]
+    anchors = (d.get("targets_b") or [])[:24] + (d.get("targets_a") or [])[:6]
     if not anchors:
         print("no anchors in targets.json"); return
 
     key = os.environ.get("CANDIDATE_API_KEY", "")
-    q = "(" + " OR ".join(f"from:{h.lower()}" for h in anchors) + ") -filter:replies"
-    cands = [cs.map_tweet_tier(c, tuple(h.lower() for h in (d.get("targets_a") or [])),
-                               tuple(h.lower() for h in (d.get("targets_b") or [])))
-             for c in cs._fetch(q, key, max_pages=1, now=now)]
+    ta = tuple(h.lower() for h in (d.get("targets_a") or []))
+    tb = tuple(h.lower() for h in (d.get("targets_b") or []))
+    # chunk: one OR-query gets unreliable past ~12 handles (the bug that returned 0 tweets)
+    cands = []
+    for i in range(0, len(anchors), 12):
+        q = "(" + " OR ".join(f"from:{h.lower()}" for h in anchors[i:i + 12]) + ") -filter:replies"
+        cands += [cs.map_tweet_tier(c, ta, tb) for c in cs._fetch(q, key, max_pages=1, now=now)]
     tracker.record("candidate_read", len(cands))
 
     seen = _seen()

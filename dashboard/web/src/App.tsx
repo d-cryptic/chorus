@@ -6,7 +6,7 @@ import { TooltipProvider, Tooltip, TooltipTrigger, TooltipContent } from "@/comp
 import { MediaGrid } from "@/components/ui/media";
 import { Toaster, toast } from "sonner";
 import { cn } from "@/lib/utils";
-import { RefreshCw, Pause, Play, OctagonX, Activity, Download } from "lucide-react";
+import { RefreshCw, Pause, Play, OctagonX, Activity, Download, Zap } from "lucide-react";
 
 const ME = "barundebnath";
 const REASONS = ["bad take", "bad tweet", "too late", "off-voice"];
@@ -47,6 +47,9 @@ export default function App() {
   const [help, setHelp] = useState(false);
   const [fetching, setFetching] = useState(false);
   const undoRef = useRef<any>(null);
+  const seenFast = useRef<Set<string>>(new Set());
+  const [notify, setNotify] = useState<boolean>(
+    typeof Notification !== "undefined" && Notification.permission === "granted");
 
   const [insights, setInsights] = useState<any>(null);
 
@@ -73,6 +76,34 @@ export default function App() {
     setCursor(0); setLoading(false);
   }, [status]);
   useEffect(() => { load(); }, [load]);
+
+  /** The fast lane's whole value is a ~25min window; an alert in /var/log is worthless.
+   *  Telegram needs a token only the user can mint, so use the browser: zero credentials,
+   *  works whenever this tab is open. Poll is cheap (the Worker reads D1, no provider). */
+  useEffect(() => {
+    if (status !== "queued") return;
+    const tick = async () => {
+      try {
+        const d = await api(`/api/suggestions?status=queued`);
+        const fast = (d.suggestions || []).filter(
+          (x: Sug) => parse(x.factors, {})?.fast_lane && !seenFast.current.has(x.id));
+        for (const f of fast) {
+          seenFast.current.add(f.id);
+          const age = parse(f.factors, {})?.age_min;
+          if (notify && typeof Notification !== "undefined" && Notification.permission === "granted") {
+            new Notification(`⚡ reply now — @${f.author_handle}`, {
+              body: `${age}m old · ${(f.tweet_text || "").slice(0, 90)}`,
+              tag: f.id, requireInteraction: true,
+            });
+          }
+          toast(`⚡ @${f.author_handle} · ${age}m old — reply now`, { duration: 20000 });
+        }
+        if (fast.length) load();
+      } catch { /* a poll failure must never break the page */ }
+    };
+    const iv = setInterval(tick, 60000);   // the box polls every 10m; 1m keeps latency low
+    return () => clearInterval(iv);
+  }, [status, notify, load]);
 
   const flash = (msg: string, undo?: () => void) => {
     undoRef.current = undo ?? null;
@@ -191,6 +222,23 @@ export default function App() {
             </button>
             <Tooltip>
               <TooltipTrigger asChild>
+                <button
+                  onClick={async () => {
+                    if (typeof Notification === "undefined") return toast.error("no notification support");
+                    const p = await Notification.requestPermission();
+                    setNotify(p === "granted");
+                    toast(p === "granted" ? "⚡ alerts armed — keep this tab open" : "notifications blocked");
+                  }}
+                  className="p-2 rounded-full hover:bg-secondary">
+                  <Zap size={16} style={{ color: notify ? "var(--primary)" : "var(--muted-foreground)" }} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {notify ? "⚡ alerts on — you'll be pinged inside the ~25min window" : "arm ⚡ reply-now alerts"}
+              </TooltipContent>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger asChild>
                 <button onClick={load} className="p-2 rounded-full hover:bg-secondary">
                   <RefreshCw size={16} style={{ color: DIM }} />
                 </button>
@@ -285,6 +333,12 @@ function Card({ s, i, focused, onFocus, pick, setPick, editing, setEditing, dism
          className={cn("rise transition-colors", focused ? "bg-[var(--card)]" : "hover:bg-card")}>
       {/* Chorus chrome — an instrument, deliberately not X */}
       <div className="mono flex items-center gap-2 px-4 pt-3 text-[11px] tracking-tight" style={{ color: "var(--muted-foreground)" }}>
+        {parse(s.factors, {})?.fast_lane ? (
+          <span className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 font-semibold"
+                style={{ background: "var(--primary)", color: "var(--primary-foreground)" }}>
+            ⚡ {parse(s.factors, {})?.age_min}m
+          </span>
+        ) : null}
         <span className="tabular-nums" style={{ color: scoreColor(s.score) }}>{s.score.toFixed(2)}</span>
         <span>·</span>
         <span className="uppercase tracking-[0.08em]" style={{ color: "var(--muted-foreground)" }}>{s.target || "reply"}</span>
