@@ -557,7 +557,12 @@ def already_said(text, *, threshold=None):
         if sc >= threshold:
             return content[:120], sc
         if sc >= threshold * 0.7:   # near-miss: surface it so the tau can be tuned
-            print(f"  (repeat near-miss {sc:.2f} < tau {threshold}: {r[0].get('content','')[:44]!r})")
+            # `r` never existed here -- a leftover from an older response shape. Every
+            # near-miss raised NameError into the except below, which reported the guard
+            # as OFF (it was not: a real repeat returns above this line) and then latched
+            # _WARNED, silencing the NEXT warning -- the one that would have been true.
+            # The near-miss line is the ONLY source of tau-tuning data; it never printed once.
+            print(f"  (repeat near-miss {sc:.2f} < tau {threshold}: {content[:44]!r})")
     except Exception as e:
         # memory down must never block a cycle, but a dead repetition guard means Chorus
         # starts repeating itself in public. Say so.
