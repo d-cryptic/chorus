@@ -488,7 +488,14 @@ def main():
 
     voice = os.environ.get("CHORUS_VOICE", "concise, specific")
     examples, niche = [], ""
-    if not args.dry_run:
+    # These read LOCAL Supermemory (127.0.0.1:6767, local embeddings) and make NO paid call,
+    # so a dry-run gained nothing by skipping them and lost the only thing a preview is for:
+    # showing what production will ACTUALLY produce. Skipping them meant every dry-run draft
+    # I judged today was written with the static env voice, no examples and no niche — so my
+    # "the tic is gone" dry-run proved nothing: the tic lived in the niche, which dry-run had
+    # switched off. A preview that exercises a different code path is a decorative preview.
+    # --no-budget still skips them: that mode is for offline tests with no services at all.
+    if not args.no_budget:
         voice = get_voice(voice)
         examples = voice_context(",".join(pillars))
         niche = niche_context()

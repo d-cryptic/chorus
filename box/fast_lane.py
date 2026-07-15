@@ -169,8 +169,8 @@ def main():
     live.sort(key=lambda x: -x[0])
     print(f"fast lane: {len(cands)} fetched, {len(live)} live (<{MAX_AGE_MIN}m, <{MAX_REPLIES} replies)")
 
-    examples = [] if args.dry_run else voice_context(",".join(pillars))
-    niche = "" if args.dry_run else niche_context()
+    examples = [] if args.no_budget else voice_context(",".join(pillars))
+    niche = "" if args.no_budget else niche_context()
     emitted = 0
     for score, c in live:
         if emitted >= args.cap or score < args.tau:

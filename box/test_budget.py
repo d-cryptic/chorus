@@ -169,6 +169,23 @@ def run():
     chk("if not api_key" in inspect.getsource(_pg.classify_shape),
         "classify_shape does the same (it is a second paid call, easy to forget)")
 
+    # --- a dry-run must exercise the REAL free path, or the preview is decorative -------
+    # voice/niche/examples read LOCAL Supermemory and make NO paid call, yet dry-run skipped
+    # them. So every draft I judged via --dry-run today was written with the static env voice,
+    # no examples and no niche — a DIFFERENT code path from production. My "the tic is gone"
+    # dry-run proved nothing: the tic lived in the niche, which dry-run had switched off.
+    # Gate them on --no-budget (offline, no services) instead of --dry-run (no writes).
+    for path, needle in (("post_gen.py", "if not args.no_budget:\n        voice = get_voice(voice)"),
+                         ("fast_lane.py", 'niche = "" if args.no_budget else niche_context()')):
+        src = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), path)).read()
+        chk(needle in src, f"{path}: the free voice/niche reads are gated on --no-budget, not --dry-run")
+    pg_src = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "post_gen.py")).read()
+    chk("if not args.dry_run:\n        voice = get_voice(voice)" not in pg_src,
+        "post_gen: a dry-run no longer skips the real voice")
+    fl_src = open(_os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "fast_lane.py")).read()
+    chk('niche = "" if args.dry_run else niche_context()' not in fl_src,
+        "fast_lane: same")
+
     print(f"BUDGET UNIT: {p} passed, {f} failed"); return f
 
 import sys; sys.exit(run())
