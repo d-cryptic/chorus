@@ -103,6 +103,18 @@ def run():
     chk(not I.should_synthesize("fp2", "fp", have_claims=False),
         "no claims -> never pay for synthesis (the n=0 case)")
 
+    # ---- regression: the insufficient placeholder MUST share the real claim's id ----
+    # id = hash(kind|scope|subject_id). If the placeholder's scope/subject differ from the
+    # real claim's, the real claim inserts a NEW row and the stale insufficient_data row
+    # stays active forever — silently breaking "deterministic replacement, never duplicates".
+    empty = {g["kind"]: g for g in I.build_insights([], now_ms=NOW)}
+    real  = {g["kind"]: g for g in I.build_insights(many, now_ms=NOW)}
+    for kind in ("winning_format", "useful_account", "best_time"):
+        chk(empty[kind]["scope"] == real[kind]["scope"]
+            and empty[kind]["subject_id"] == real[kind]["subject_id"],
+            f"{kind}: placeholder shares scope/subject with the real claim (same id)")
+    chk(empty["useful_account"]["scope"] == "network", "useful_account placeholder uses network scope")
+
     print(f"INSIGHTS UNIT: {p} passed, {f} failed"); return f
 
 import sys; sys.exit(run())

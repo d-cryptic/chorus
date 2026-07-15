@@ -20,10 +20,15 @@ type Sug = {
 
 const api = (p: string) => fetch(p, { credentials: "same-origin" }).then((r) => r.json());
 const parse = (x: any, f: any) => { try { return typeof x === "string" ? JSON.parse(x) : x ?? f; } catch { return f; } };
-const post = (p: string, body: any) =>
-  fetch(p, { method: "POST", credentials: "same-origin",
-             headers: { "content-type": "application/json", "X-Chorus": "1" },
-             body: JSON.stringify(body) }).then((r) => r.json());
+const post = async (p: string, body: any) => {
+  // fetch() does NOT reject on 4xx/5xx. Without this check a failed action still
+  // removed the card and toasted success — you would think you had acted when you hadn't.
+  const r = await fetch(p, { method: "POST", credentials: "same-origin",
+                             headers: { "content-type": "application/json", "X-Chorus": "1" },
+                             body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(`${p} -> ${r.status}`);
+  return r.json();
+};
 
 export default function App() {
   const [status, setStatus] = useState("queued");
@@ -43,8 +48,17 @@ export default function App() {
   const [fetching, setFetching] = useState(false);
   const undoRef = useRef<any>(null);
 
+  const [insights, setInsights] = useState<any>(null);
+
   const load = useCallback(async () => {
     setLoading(true);
+    if (status === "insights") {
+      const [rv, ins] = await Promise.all([
+        api(`/api/review`).catch(() => ({})),
+        api(`/api/insights`).catch(() => ({ insights: [], playbook: null })),
+      ]);
+      setInsights({ ...rv, ...ins }); setLoading(false); return;
+    }
     const [sg, sp, st, cf] = await Promise.all([
       api(`/api/suggestions?status=${status}`),
       api(`/api/spend`).catch(() => ({ total: 0 })),
@@ -67,13 +81,22 @@ export default function App() {
 
   const act = async (s: Sug, action: string, extra: any = {}) => {
     const idx = pick[s.id] ?? 0;
+    const at = items.findIndex((i) => i.id === s.id);
     setItems((x) => x.filter((i) => i.id !== s.id));           // optimistic
     setCursor((c) => Math.min(c, Math.max(0, items.length - 2)));
-    const body = { action, draft_index: idx, ...extra };
-    post(`/api/suggestions/${encodeURIComponent(s.id)}/action`, body).catch(() => {});
+    try {
+      await post(`/api/suggestions/${encodeURIComponent(s.id)}/action`, { action, draft_index: idx, ...extra });
+    } catch (e) {
+      // roll the card back where it was and say so — silently losing an action is worse
+      setItems((x) => { const n = [...x]; n.splice(Math.max(0, at), 0, s); return n; });
+      toast.error(`${action.replace("_", " ")} failed — still queued`);
+      return;
+    }
     flash(action.replace("_", " "), async () => {
-      await post(`/api/suggestions/${encodeURIComponent(s.id)}/action`, { action: "queued" }).catch(() => {});
-      setItems((x) => [s, ...x]); toast.dismiss();
+      try {
+        await post(`/api/suggestions/${encodeURIComponent(s.id)}/action`, { action: "queued" });
+        setItems((x) => [s, ...x]); toast.dismiss();
+      } catch { toast.error("undo failed"); }
     });
   };
 
@@ -120,8 +143,10 @@ export default function App() {
    *  owns the keys) runs the real cycle within ~5m. */
   const fetchNow = async () => {
     setFetching(true);
-    await post(`/api/fetch`, {}).catch(() => {});
-    toast("Fetch queued — the box runs a cycle within ~5 min", { duration: 5000 });
+    try {
+      await post(`/api/fetch`, {});
+      toast("Fetch queued — the box runs a cycle within ~5 min", { duration: 5000 });
+    } catch { toast.error("Could not queue a fetch"); setFetching(false); return; }
     setTimeout(() => { setFetching(false); load(); }, 90000);
   };
 
@@ -179,7 +204,7 @@ export default function App() {
 
         <Tabs value={status} onValueChange={setStatus}>
           <TabsList>
-            {["queued", "posted", "dismissed"].map((t) => (
+            {["queued", "posted", "dismissed", "insights"].map((t) => (
               <TabsTrigger key={t} value={t}>
                 {t}{counts[t] ? <span className="ml-1 font-mono opacity-60">{counts[t]}</span> : null}
               </TabsTrigger>
@@ -190,6 +215,7 @@ export default function App() {
         {blocked && <Blocked {...blocked} />}
 
         {loading ? <p className="py-16 text-center text-[15px]" style={{ color: DIM }}>Loading…</p>
+          : status === "insights" ? <Insights data={insights} />
           : items.length === 0 && !blocked ? <Empty beat={beat} onRefresh={load} />
           : items.map((s, i) => (
               <Card key={s.id} s={s} focused={i === cursor} onFocus={() => setCursor(i)}
@@ -391,5 +417,99 @@ function Help() {
         ))}
       </div>
     </>
+  );
+}
+
+/** The insights engine was invisible after the rewrite. It lives here now — its own tab,
+ *  so it never shoves suggestion #1 below the fold (the opposite of triage). */
+function Insights({ data }: { data: any }) {
+  if (!data) return <p className="py-16 text-center text-[15px]" style={{ color: DIM }}>Loading…</p>;
+  const list: any[] = data.insights || [];
+  const claims = list.filter((i) => parse(i.payload, {})?.state !== "insufficient_data");
+  const waiting = list.length - claims.length;
+  const pb = data.playbook ? parse(data.playbook.doc, {}) : null;
+  const Row = ({ label, val, pct }: any) => (
+    <div className="flex items-center gap-2 text-[13px] font-mono py-0.5">
+      <span className="w-24 truncate text-right" style={{ color: DIM }}>{label}</span>
+      <div className="h-1.5 flex-1 rounded-sm" style={{ background: "#2f3336" }}>
+        <div className="h-1.5 rounded-sm" style={{ width: `${pct}%`, background: X_BLUE }} />
+      </div>
+      <span style={{ color: DIM }}>{val}</span>
+    </div>
+  );
+  return (
+    <div className="px-4 py-4 space-y-6">
+      <section>
+        <h3 className="text-[15px] font-bold mb-2">What's working</h3>
+        {claims.length === 0 ? (
+          <p className="text-[13px]" style={{ color: DIM }}>
+            Not enough data yet{waiting ? ` — ${waiting} insight(s) waiting on samples` : ""}.
+            Act on suggestions (post / edit / dismiss) and these fill in.
+          </p>
+        ) : claims.map((i, n) => {
+          const p = parse(i.payload, {});
+          const head = p.best ? `best: ${p.best}`
+            : p.best_hour !== undefined ? `best hour: ${String(p.best_hour).padStart(2, "0")}:00`
+            : p.dominant ? `${p.dominant} (${Math.round((p.share || 0) * 100)}%)`
+            : p.verdict ? `${p.verdict} · ${p.engagement} eng`
+            : p.ranked?.[0] ? `${p.ranked[0].key}` : "—";
+          return (
+            <div key={n} className="flex items-center gap-2 text-[13px] font-mono py-1">
+              <span className="rounded px-1.5 py-0.5" style={{ border: `1px solid ${LINE}`, color: DIM }}>{i.kind}</span>
+              <span className="flex-1 truncate">{head}</span>
+              <span title="confidence = n/(n+k); never 1.0 on small samples" style={{ color: DIM }}>
+                conf {Number(i.confidence).toFixed(2)}
+              </span>
+            </div>
+          );
+        })}
+      </section>
+
+      {(data.byPillar || []).filter((x: any) => x.k && x.total).length > 0 && (
+        <section>
+          <h3 className="text-[15px] font-bold mb-2">Acceptance by pillar</h3>
+          {data.byPillar.filter((x: any) => x.k && x.total).map((x: any) => (
+            <Row key={x.k} label={x.k} val={`${Math.round(100 * x.posted / x.total)}% · ${x.posted}/${x.total}`}
+                 pct={100 * x.posted / x.total} />
+          ))}
+        </section>
+      )}
+
+      {(data.weights || []).length > 0 && (
+        <section>
+          <h3 className="text-[15px] font-bold mb-2">Ranking weights</h3>
+          {data.weights.map((w: any) => (
+            <Row key={w.k} label={w.k} val={Number(w.v).toFixed(2)}
+                 pct={(Number(w.v) / Math.max(...data.weights.map((z: any) => z.v))) * 100} />
+          ))}
+        </section>
+      )}
+
+      {pb && (
+        <section>
+          <h3 className="text-[15px] font-bold mb-2">Playbook · {data.playbook.phase}</h3>
+          {["keep_long", "keep_short", "dont_keep"].map((k) => (pb[k] || []).length > 0 && (
+            <div key={k} className="mb-2">
+              <div className="text-[13px] font-mono mb-1" style={{ color: DIM }}>{k.replace("_", " ")}</div>
+              {(pb[k] || []).slice(0, 3).map((r: any, i: number) => (
+                <div key={i} className="text-[13px] pl-3 py-0.5">
+                  {r.rule}
+                  <span className="font-mono" style={{ color: DIM }}> — {r.evidence} (conf {r.confidence})</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </section>
+      )}
+
+      {(data.reasons || []).length > 0 && (
+        <section>
+          <h3 className="text-[15px] font-bold mb-2">Top dismiss reasons</h3>
+          {data.reasons.map((x: any) => (
+            <div key={x.k} className="text-[13px]" style={{ color: DIM }}>{x.k} ×{x.n}</div>
+          ))}
+        </section>
+      )}
+    </div>
   );
 }

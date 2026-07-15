@@ -101,10 +101,16 @@ def rank_buckets(buckets, *, min_sample: int = MIN_SAMPLE):
     return ranked
 
 
-def insufficient(kind: str, n: int, need: int = MIN_SAMPLE) -> dict:
-    """An honest 'we don't know yet' insight. Better than a fabricated claim."""
+def insufficient(kind: str, n: int, need: int = MIN_SAMPLE, *,
+                 scope: str = "user", subject_id: str = "self") -> dict:
+    """An honest 'we don't know yet' insight. Better than a fabricated claim.
+
+    scope/subject_id MUST match the real claim's, because the row id is
+    hash(kind|scope|subject_id): if they differ, the real claim inserts a NEW row and
+    this placeholder stays active forever instead of being superseded.
+    """
     return {
-        "kind": kind, "scope": "user", "subject_id": "self", "term": "short",
+        "kind": kind, "scope": scope, "subject_id": subject_id, "term": "short",
         "confidence": 0.0, "status": "active",
         "payload": {"state": "insufficient_data", "n": n, "need": need,
                     "note": f"need >= {need} acted-on suggestions; have {n}"},
@@ -132,7 +138,8 @@ def build_insights(rows, *, now_ms: int) -> list:
     # 2. useful_account — whose tweets are actually worth replying to
     by_author = tally(rows, lambda r: r.get("author_handle"))
     ranked_a = rank_buckets(by_author)
-    out.append(insufficient("useful_account", n) if not ranked_a else {
+    out.append(insufficient("useful_account", n, scope="network", subject_id="targets")
+               if not ranked_a else {
         "kind": "useful_account", "scope": "network", "subject_id": "targets",
         "term": "long", "status": "active",
         "confidence": max(x["confidence"] for x in ranked_a),
@@ -298,8 +305,18 @@ def main():
             print(f"  [{i['confidence']}] {i['kind']}: {json.dumps(i['payload'])[:90]}")
         return
 
-    prev = _req(f"{base}/api/box/insights", token=token).get("fingerprint")
-    _req(f"{base}/api/box/insights", "POST", token, {"insights": ins, "fingerprint": fp})
+    # The fingerprint is only used to gate the PAID L3 call. A blip reading it must not
+    # block the free, always-correct L1 write.
+    try:
+        prev = _req(f"{base}/api/box/insights", token=token).get("fingerprint")
+    except Exception as e:
+        print(f"  fingerprint read failed ({repr(e)[:40]}) - will not gate L3 on it")
+        prev = None
+    try:
+        _req(f"{base}/api/box/insights", "POST", token, {"insights": ins, "fingerprint": fp})
+    except Exception as e:
+        print(f"  WARN: L1 insights not stored: {repr(e)[:60]}")
+        return
 
     if should_synthesize(fp, prev, have_claims=bool(claims)) or (args.force and claims):
         spent, ceiling, paused, killed, quiet, _a = (0, 0.65, 0, 0, None, "L1")
@@ -323,7 +340,12 @@ def main():
                  {"phase": phase, "doc": doc, "fingerprint": fp})
             usd = tracker.flush()
             if usd > 0:
-                _req(f"{base}/api/box/spend", "POST", token, {"source": "insights", "usd": usd})
+                # mirror ranker.flush_spend: a failed ledger POST must warn, never crash
+                # AFTER the paid call already happened.
+                try:
+                    _req(f"{base}/api/box/spend", "POST", token, {"source": "insights", "usd": usd})
+                except Exception as e:
+                    print(f"  WARN: ${usd} spent but NOT recorded ({repr(e)[:40]})")
             print(f"  playbook synthesized (phase={phase}, ${usd})")
     else:
         print("  L3 skipped: nothing moved (or no real claims) - $0 spent")

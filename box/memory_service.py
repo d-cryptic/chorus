@@ -12,6 +12,7 @@ Env: MEMORY_DB (default /opt/chorus/memory.db), MEMORY_PORT (8000),
 """
 from __future__ import annotations
 import os, json, sqlite3, time, hashlib
+from contextlib import closing
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs
 
@@ -65,13 +66,14 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(401, {"error": "unauthorized"})
         if path == "/v3/documents":
             want = self._tags()
-            c = _db()
-            rows = c.execute("SELECT id,content,tags,metadata,created_at FROM documents "
-                             "ORDER BY created_at DESC LIMIT 1000").fetchall()
-            c.close()
+            with closing(_db()) as c:   # never leak an fd on a locked/failed db
+                rows = c.execute("SELECT id,content,tags,metadata,created_at FROM documents "
+                                 "ORDER BY created_at DESC").fetchall()
+            # Filter FIRST, cap AFTER. Capping first meant a tag-scoped list could return
+            # nothing once the table grew past the cap, even with matching rows present.
             docs = [{"id": r[0], "content": r[1], "containerTags": json.loads(r[2]),
                      "metadata": json.loads(r[3] or "{}"), "createdAt": r[4]}
-                    for r in rows if not want or _has_tags(r[2], want)]
+                    for r in rows if not want or _has_tags(r[2], want)][:1000]
             return self._send(200, {"documents": docs, "count": len(docs)})
         return self._send(404, {"error": "not found"})
 
@@ -88,20 +90,18 @@ class Handler(BaseHTTPRequestHandler):
             meta = body.get("metadata") or {}
             did = body.get("id") or hashlib.sha256(
                 (content + json.dumps(tags, sort_keys=True)).encode()).hexdigest()[:24]
-            c = _db()
-            c.execute("INSERT OR REPLACE INTO documents(id,content,tags,metadata,created_at) "
-                      "VALUES(?,?,?,?,?)",
-                      (did, content, json.dumps(tags), json.dumps(meta), int(time.time() * 1000)))
-            c.commit()
-            c.close()
+            with closing(_db()) as c:
+                c.execute("INSERT OR REPLACE INTO documents(id,content,tags,metadata,created_at) "
+                          "VALUES(?,?,?,?,?)",
+                          (did, content, json.dumps(tags), json.dumps(meta), int(time.time() * 1000)))
+                c.commit()
             return self._send(200, {"id": did, "status": "stored"})
         if path == "/v3/search":
             q = (body.get("q") or body.get("query") or "").lower()
             want = body.get("containerTags") or []
-            c = _db()
-            rows = c.execute("SELECT id,content,tags,metadata,created_at FROM documents "
-                             "ORDER BY created_at DESC").fetchall()
-            c.close()
+            with closing(_db()) as c:
+                rows = c.execute("SELECT id,content,tags,metadata,created_at FROM documents "
+                                 "ORDER BY created_at DESC").fetchall()
             res = [{"id": r[0], "content": r[1], "containerTags": json.loads(r[2]),
                     "metadata": json.loads(r[3] or "{}"), "createdAt": r[4]}
                    for r in rows
@@ -116,13 +116,12 @@ class Handler(BaseHTTPRequestHandler):
             want = self._tags()
             if not want:
                 return self._send(400, {"error": "containerTags required for delete"})
-            c = _db()
-            ids = [r[0] for r in c.execute("SELECT id,tags FROM documents").fetchall()
-                   if _has_tags(r[1], want)]
-            for i in ids:
-                c.execute("DELETE FROM documents WHERE id=?", (i,))
-            c.commit()
-            c.close()
+            with closing(_db()) as c:
+                ids = [r[0] for r in c.execute("SELECT id,tags FROM documents").fetchall()
+                       if _has_tags(r[1], want)]
+                for i in ids:
+                    c.execute("DELETE FROM documents WHERE id=?", (i,))
+                c.commit()
             return self._send(200, {"deleted": len(ids)})
         return self._send(404, {"error": "not found"})
 
