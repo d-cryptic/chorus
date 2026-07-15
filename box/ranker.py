@@ -157,7 +157,12 @@ def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche="", room=(
     nb = ""
     if niche:
         nb = ("\n<niche_patterns>  # what earns replies in this niche - STRUCTURE ONLY.\n"
-              "# Use these shapes. NEVER borrow their claims, numbers, topics or opinions.\n"
+              "# Use these shapes. NEVER borrow their claims, numbers, topics, opinions OR THEIR\n"
+              "# WORDING. These describe MOVES, not scripts: execute the move in your OWN words.\n"
+              "# If a pattern reads like a template with a blank, that is a bug in the pattern:\n"
+              "# take the idea and throw the phrasing away. One extracted phrase ('the most\n"
+              "# charitable reading is that...') got parroted into 14 of 174 drafts: 8%, the\n"
+              "# single most common opener. Nothing makes an account read as a bot faster.\n"
               "# Your VOICE above always wins: if a pattern fights the voice, drop the pattern.\n"
               f"{niche}\n</niche_patterns>\n")
     rm = ""

@@ -64,10 +64,19 @@ def build_prompt(posts, mode="posts") -> str:
         "Extract ONLY the reusable STRUCTURAL patterns that made these land: how they "
         "open (hook shape), length, formatting, rhetorical move, whether/how they invite "
         "a reply, and what they avoid.\n"
-        "CRITICAL: do NOT extract or repeat their claims, numbers, opinions or topics. "
-        "Patterns only — someone will apply these in their OWN words about their OWN work.\n"
+        "CRITICAL: do NOT extract or repeat their claims, numbers, opinions, topics OR THEIR "
+        "WORDING. Describe each move ABSTRACTLY, in your own words, so it could be executed "
+        "in any voice. Never quote a phrase and never emit a fill-in-the-blank template.\n"
+        "  BAD  (a template — it smuggles their words into someone else's mouth): "
+        "\"The most charitable reading is that [observation].\"\n"
+        "  GOOD (the same move, described): \"opens by granting the opposing view its "
+        "strongest form before disagreeing\"\n"
+        "This matters: a phrase handed over verbatim gets parroted. That exact template was "
+        "extracted once and then opened 14 of 174 drafts — 8%, the single most common opener, "
+        "which is how an account reads as a bot.\n"
         f"<posts>\n{body}\n</posts>\n"
-        'Return JSON {"hooks":[3-6 hook shapes, each a short template], '
+        'Return JSON {"hooks":[3-6 hook shapes, each DESCRIBED not quoted — no templates, '
+        'no [brackets], no borrowed phrasing], '
         '"moves":[3-6 rhetorical moves that earned engagement], '
         '"humour":[2-5 ways they use sarcasm/jokes/memes/understatement, if any], '
         '"avoid":[3-5 things these never do], '
@@ -110,6 +119,30 @@ def to_doc(d) -> str:
     return "niche patterns (structure only, not content) — " + " | ".join(parts)
 
 
+
+def supersede(tag, key):
+    """Delete every doc carrying `tag`, so the fresh one REPLACES rather than joins it.
+
+    `DELETE /v3/documents?containerTags=` 404s on upstream Supermemory — that route only ever
+    existed on the local shim this box used to run. So the "supersede" silently did nothing:
+    each weekly run would ADD a niche doc beside the stale one, and niche_context() reads the
+    first hit, which could be either. That is how a poisoned pattern outlives its fix.
+    List, then delete by id: verified against upstream during the 23-doc migration.
+    """
+    try:
+        out = _req(f"{SM_BASE}/v3/documents/list", "POST", key or None, {"limit": 500}) or {}
+    except Exception as e:
+        print(f"  supersede: list failed ({repr(e)[:40]}) — not deleting blind"); return 0
+    gone = 0
+    for d in (out.get("memories") or []):
+        if tag in (d.get("containerTags") or []):
+            try:
+                _req(f"{SM_BASE}/v3/documents/{d['id']}", "DELETE", key or None)
+                gone += 1
+            except Exception:
+                pass          # a doc mid-ingest 409s; the next run gets it
+    return gone
+
 def main():
     ap = argparse.ArgumentParser(description="Mine winning-post patterns from your niche")
     ap.add_argument("--dry-run", action="store_true")
@@ -151,7 +184,7 @@ def main():
         return
     key = os.environ.get("SUPERMEMORY_API_KEY", "")
     tag = TAG_REPLIES if args.mode == "replies" else TAG
-    _req(f"{SM_BASE}/v3/documents?containerTags={tag}", "DELETE", key or None)  # supersede
+    print(f"  superseded {supersede(tag, key)} stale {tag} doc(s)")
     _req(SM_URL, "POST", key or None,
          {"content": doc, "containerTags": [tag],
           "metadata": {"kind": f"niche_style_{args.mode}", "n_posts": len(posts), "ts": now}})
@@ -175,7 +208,7 @@ def main():
             c = contrast(mine_txt, theirs_txt)
             cdoc = contrast_doc(c)
             print(f"  contrast: {cdoc[:200]}")
-            _req(f"{SM_BASE}/v3/documents?containerTags={TAG_CONTRAST}", "DELETE", key or None)
+            supersede(TAG_CONTRAST, key)
             _req(SM_URL, "POST", key or None,
                  {"content": cdoc, "containerTags": [TAG_CONTRAST],
                   "metadata": {"kind": "niche_contrast", "n_mine": c.get("n_mine"),
