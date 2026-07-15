@@ -180,6 +180,7 @@ def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche="", room=(
         "   HARD LIMITS so it stays classy: at most ONE emoji (usually zero). At most ONE "
         "slang term in the whole reply. NEVER 'bro', 'lowkey', 'hell yes', 'fire', 'goated', "
         "'no-brainer', 'gamechanger', 'this slaps', stacked exclamation marks, or 🔥🚀💯. "
+        "No em-dashes or en-dashes (— –) ANYWHERE: they are the clearest tell that a machine wrote it. Use a full stop, a comma, or brackets. "
         "Do not open with 'ngl' - it is a crutch. Understatement beats hype every time: "
         "'that scales about as well as a group chat' lands, 'THIS IS INSANE 🔥' does not.\n"
         "5. Still banned, because they read as a bot: 'Great point', 'Absolutely', 'This is "

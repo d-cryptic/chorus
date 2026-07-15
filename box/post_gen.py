@@ -168,6 +168,7 @@ def build_prompt(idea, voice, examples, niche, pillars):
         "ONE emoji, at most ONE slang term. Never 'bro', 'fire', 'gamechanger', '!!!'. "
         "Do not open with 'ngl'. Vary openers across drafts.\n"
         "4. Under 280 chars per tweet. Lowercase is fine. No hashtags. No sign-off.\n"
+        "   No em-dashes or en-dashes (— –) ANYWHERE: they are the clearest tell that a machine wrote it. Use a full stop, a comma, or brackets. \n"
         "5. thread: ONLY if the idea genuinely has 3+ distinct beats. 3-7 segments, hook "
         "in the first. Never pad a one-liner into a thread.\n"
         "\nReturn JSON {\"drafts\": [2 post strings], \"thread\": [optional 3-7 strings], "
