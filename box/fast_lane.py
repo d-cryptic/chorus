@@ -171,8 +171,10 @@ def main():
         if not drafts:
             continue
         scores = judge_draft(c, drafts[0], voice, model=model, api_key=api_key, tracker=tracker,
-                             examples=examples + tuple(f"(already said) {r['text'][:90]}"
-                                                       for r in room[:5]))
+                             # voice_context() returns a LIST; `list + tuple` is a TypeError
+                             # that killed every fast_lane run for days. Normalise both sides.
+                             examples=list(examples) + [f"(already said) {r['text'][:90]}"
+                                                        for r in room[:5]])
         passed, failed = G.judge_verdict(scores)
         if not passed:
             print(f"  judge rejected @{c.get('author')} ({','.join(failed)})")
