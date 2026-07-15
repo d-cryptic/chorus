@@ -207,14 +207,51 @@ def taste_doc(t) -> str:
     lines += [f"- {p['note']}" for p in t["prefs"]]
     return "\n".join(lines)
 
+def niche_is_empty(sm_base: str, key: str) -> bool | None:
+    """Is chorus:niche actually populated? Free (a local list call), so it can gate a paid run.
+
+    Why this exists: chorus:niche was wiped and NOTHING noticed for hours. niche_context()
+    returns "" for both "memory is down" and "memory is empty", and the drafter is documented
+    to degrade silently, so every draft went out with no taste patterns and no signal. The
+    weekly cron (Mon 03:00) meant a Wednesday wipe = 5 days of unguided drafts.
+
+    Returns True/False, or None when the store cannot be reached -- None means DO NOT act:
+    an unreachable store is not an empty one, and mining on that mistake would burn budget
+    re-deriving patterns that already exist.
+    """
+    import urllib.request as _u
+    try:
+        rq = _u.Request(f"{sm_base.rstrip('/')}/v3/documents/list",
+                        data=json.dumps({"limit": 500}).encode(), method="POST",
+                        headers={"Authorization": f"Bearer {key}", "Content-Type": "application/json"})
+        docs = json.loads(_u.urlopen(rq, timeout=15).read())["memories"]
+    except Exception as e:
+        print(f"  niche probe could not reach memory ({repr(e)[:44]}) - not mining, "
+              f"an unreachable store is not an empty one")
+        return None
+    n = sum(1 for d in docs if any((t or "").startswith(TAG) for t in (d.get("containerTags") or [])))
+    print(f"  chorus:niche holds {n} doc(s)")
+    return n == 0
+
+
 def main():
     ap = argparse.ArgumentParser(description="Mine winning-post patterns from your niche")
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--if-empty", action="store_true",
+                    help="exit free unless chorus:niche is EMPTY. Lets a daily cron self-heal a "
+                         "wipe within 24h while a normal day costs nothing.")
     ap.add_argument("--pages", type=int, default=1)
     ap.add_argument("--top", type=int, default=15)
     ap.add_argument("--mode", choices=["posts", "replies"], default="posts",
                     help="posts = what wins as an original; replies = what wins as a COMMENT")
     args = ap.parse_args()
+
+    if args.if_empty:
+        empty = niche_is_empty(os.environ.get("SUPERMEMORY_BASE_URL", "http://localhost:8000"),
+                               os.environ.get("SUPERMEMORY_API_KEY", ""))
+        if empty is not True:      # False (populated) or None (unreachable) -> spend nothing
+            print("  --if-empty: nothing to rebuild, exiting without a paid call")
+            return
 
     model = os.environ.get("OPENROUTER_MODEL", "deepseek/deepseek-chat")
     api_key = os.environ.get("OPENROUTER_API_KEY", "")
@@ -330,12 +367,6 @@ def main():
             print(f"  taste skipped (non-fatal): {repr(e)[:60]}")
 
 
-if __name__ == "__main__":
-    main()
-
-
-# ---- me vs them ------------------------------------------------------------
-
 TAG_CONTRAST = "chorus:niche:contrast"
 
 
@@ -419,3 +450,15 @@ def contrast_doc(c) -> str:
              "never copy their content:"]
     lines += [f"- {g['note']}" for g in c["gaps"]]
     return "\n".join(lines)
+
+
+# NOTE: this MUST stay at the very bottom. It used to sit above features()/contrast()/
+# TAG_CONTRAST, so running as a script executed main() BEFORE those names existed ->
+# NameError -> "skipped (non-fatal)" -> contrast and taste NEVER ran in production.
+# Tests import the module, which loads every def first, so they saw a working module
+# and could not catch it. Anything defined below an entry point is invisible to it.
+if __name__ == "__main__":
+    main()
+
+
+# ---- me vs them ------------------------------------------------------------
