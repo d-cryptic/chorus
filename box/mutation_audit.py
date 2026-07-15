@@ -21,6 +21,11 @@ MUTANTS = [
     # property is decorative and the failure mode is the user's ACCOUNT, not a bad insight.
     ("ranker.py", 'if autonomy not in ("L0", "L1"):', 'if autonomy not in ("L0", "L1", "L2"):',
      "SUGGEST-ONLY: autonomy gate widened past L1"),
+    # session_mine turns PRIVATE sessions into PUBLIC tweets. The failure mode here is a
+    # leaked credential on the user's timeline, so these mutants matter more than any other.
+    ("session_mine.py", 'new1_|AIza)[A-Za-z0-9_\\-]{8,}', 'ZZZZ_NEVER_MATCHES)',
+     "REDACTION: L1 key regex neutered"),
+    ("session_mine.py", "def leaks(", "def _dead_leaks(", "REDACTION: L3 leak check removed"),
     ("ranker.py", "def get_voice(fallback):",
      'def _autopost(t, k):\n    return _req("https://api.x.com/2/tweets", "POST", k, {"text": t})\n\n\ndef get_voice(fallback):',
      "SUGGEST-ONLY: a real write lane added"),
