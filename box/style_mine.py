@@ -294,6 +294,8 @@ def main():
         # spent_remote and believe today's ledger is $0, which is the same evasion wearing a
         # number. The kill-switch must stop the weekly paid mine like it stops everything else.
         try:
+            base = os.environ.get("INGEST_URL", "http://localhost:8787").rstrip("/")
+            token = os.environ.get("INGEST_TOKEN", "")
             spent, ceiling, paused, killed, quiet, autonomy, _dl = get_budget(base, token)
             tracker = B.BudgetTracker(spent=spent, ceiling=ceiling, paused=paused, killed=killed)
         except Exception as e:
