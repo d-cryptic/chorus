@@ -256,7 +256,21 @@ async function box(req: Request, env: Env, url: URL): Promise<Response> {
       "COALESCE(f.final_text, json_extract(s.drafts, '$[' || COALESCE(s.draft_index,0) || ']')) AS posted_text " +
       "FROM feedback f JOIN suggestion s ON s.id=f.suggestion_id LEFT JOIN outcome o ON o.suggestion_id=s.id WHERE f.ts > ? ORDER BY f.ts LIMIT 500"
       ).bind(since).all();
-      return json({ feedback: results });
+
+      // EXPIRY IS A REJECTION, and it was invisible here. The user posts the good ones and
+      // ignores the rest; they do not click Dismiss. Result: 10 posted / 0 dismissed, and
+      // rank_tune has NEVER run ("need both accepted and dismissed feedback") — the learning
+      // loop starved on a signal we already had. An expired suggestion is a soft no.
+      // It is only evidence if the user was PRESENT: if they were away for a day everything
+      // expires and that says nothing about their taste. So we hand the box expires_at and
+      // let it decide (it has the activity timeline); we do NOT fabricate a feedback row.
+      const { results: expired } = await env.DB.prepare(
+        "SELECT s.id, 'expired' AS action, NULL AS final_text, NULL AS reason, s.expires_at AS ts, " +
+        "s.author_handle, s.angle, s.factors, s.drafts, s.draft_index, s.target, s.thread, s.longform, s.pillar, " +
+        "NULL AS likes, NULL AS replies, NULL AS posted_text " +
+        "FROM suggestion s WHERE s.status='expired' AND s.expires_at > ? ORDER BY s.expires_at LIMIT 500"
+      ).bind(since).all();
+      return json({ feedback: [...results, ...expired] });
     }
     // Latest stored fingerprint — lets the box skip paid L3 synthesis when nothing moved.
     if (req.method === "GET" && p === "/api/box/insights") {

@@ -531,6 +531,10 @@ def load_candidates(args, now):
     except ImportError:
         raise SystemExit("No --input and no local candidate source (box/candidate_source.py). "
                          "Add your private adapter (see box/README) or pass --input.")
+    # Ask only for what gate() can keep. style_mine/discover_anchors do NOT set this: they
+    # need history (winning posts are old; posting clocks need a time series).
+    if not getattr(args, "since_h", None):
+        args.since_h = WINDOW_H
     return candidate_source.fetch_candidates(args, now)
 
 def run(args):

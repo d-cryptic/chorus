@@ -64,6 +64,33 @@ def follower_attribution(base, tok):
     return per
 
 
+
+def active_days(fb):
+    """Days on which the user demonstrably LOOKED (they acted on something).
+
+    Expiry only means "rejected" if they were present to reject it. If they were away for a
+    day, everything expires and that is not a preference — treating it as one would teach the
+    ranker that whatever it suggested on a busy Tuesday is bad.
+    """
+    import datetime
+    out = set()
+    for f in fb:
+        if (f.get("action") or "").startswith("posted") or f.get("action") == "dismissed":
+            ts = f.get("ts")
+            if ts:
+                out.add(datetime.date.fromtimestamp(ts / 1000).isoformat())
+    return out
+
+
+def negative_weight(action, present):
+    """How much a rejection counts. An explicit Dismiss is a considered no; an expiry is a
+    shrug, and only counts at all if the user was around to shrug."""
+    if action == "dismissed":
+        return 1.0
+    if action == "expired":
+        return 0.35 if present else 0.0     # 0 => ignored entirely, not counted as evidence
+    return 0.0
+
 def main():
     base = os.environ.get("INGEST_URL", "http://localhost:8787").rstrip("/"); tok = os.environ.get("INGEST_TOKEN", "")
     fol_for = follower_attribution(base, tok)
@@ -71,11 +98,13 @@ def main():
     if len(fb) < 5:
         print(f"only {len(fb)} feedback rows — need >=5 to tune"); return
     pos, neg, nP, nN = {}, {}, 0.0, 0.0
+    _active = active_days(fb)
     for f in fb:
         fac = f.get("factors")
         fac = json.loads(fac) if isinstance(fac, str) else (fac or {})
         if not fac: continue
-        positive = (f.get("action", "") or "").startswith("posted")
+        action = (f.get("action") or "")
+        positive = action.startswith("posted")
         if positive:
             # REWARD = FOLLOWERS GAINED, not likes. The goal is followers; likes are a
             # proxy that diverges badly — a viral joke earns 500 likes and 0 follows, a
@@ -89,10 +118,17 @@ def main():
             nP += w
             for k, v in _numeric(fac).items(): pos[k] = pos.get(k, 0) + v * w
         else:
-            nN += 1
-            for k, v in _numeric(fac).items(): neg[k] = neg.get(k, 0) + v
+            import datetime
+            day = datetime.date.fromtimestamp((f.get("ts") or 0) / 1000).isoformat() if f.get("ts") else None
+            w = negative_weight(action, day in _active)
+            if w <= 0:
+                continue                     # expired while the user was away: not evidence
+            nN += w
+            for k, v in _numeric(fac).items(): neg[k] = neg.get(k, 0) + v * w
     if not nP or not nN:
-        print("need both accepted and dismissed feedback"); return
+        print(f"need both accepted and rejected feedback "
+              f"(have {nP:.1f} accepted, {nN:.1f} rejected; expiries only count on days you "
+              f"were active)"); return
     tuned = 0
     for k in set(pos) | set(neg):
         disc = pos.get(k, 0) / nP - neg.get(k, 0) / nN  # >0 => predicts acceptance
