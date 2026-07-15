@@ -10,7 +10,7 @@ Env: INGEST_URL, INGEST_TOKEN, OPENROUTER_API_KEY, OPENROUTER_MODEL, CHORUS_PILL
      candidate_source.py adapter (kept OUT of the public repo).
 """
 from __future__ import annotations
-import os, sys, json, time, argparse, hashlib, urllib.request, urllib.error
+import os, re, sys, json, time, argparse, hashlib, urllib.request, urllib.error
 import budget as B
 import generate as G
 import memes
@@ -134,7 +134,7 @@ def flush_spend(base, token, tracker, *, source="cycle"):
               f"local ceiling still binds this cycle, but the ledger is now behind")
         return False
 
-def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche="", room=()):
+def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche="", room=(), link=""):
     """One LLM call -> {angle, drafts[], angle_strength}. Deterministic fallback when no key."""
     if not api_key:
         return {"angle": f"tie to {pillar or 'your pillars'}", "angle_strength": 0.5,
@@ -143,6 +143,13 @@ def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche="", room=(
     if examples:
         ex = ("<context>  # everything you actually know about this person\n"
               + "\n".join(f"- {e}" for e in examples) + "\n</context>\n")
+    lk = ""
+    if link:
+        # The tweet is often just a headline + URL, leaving the drafter nothing concrete to
+        # react to -- which is how invented specifics got in. This is a REAL, fetched source,
+        # so rule 1 below lists it as legitimate grounding.
+        lk = ("\n<link>  # the page this tweet links to, fetched. Real: you may use it.\n"
+              f"{link}\n</link>\n")
     nb = ""
     if niche:
         nb = ("\n<niche_patterns>  # what earns replies in this niche - STRUCTURE ONLY.\n"
@@ -157,11 +164,11 @@ def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche="", room=(
                 " in there, find the angle NOBODY took, or say nothing worth saying.\n")
     prompt = (
         "You draft replies that a REAL person will post from their own X account.\n"
-        f"VOICE: {voice}\n" + ex + nb +
+        f"VOICE: {voice}\n" + ex + lk + nb +
         "\nHARD RULES — a draft that breaks any of these is unusable:\n"
         "1. You do NOT know what this person has built, run, measured or shipped. NEVER "
         "invent first-person claims ('our logs show', 'we ran', 'I tested', 'our fleet', "
-        "'last quarter we'). If it is not in VOICE/<context> or the <tweet>, you do not have it.\n"
+        "'last quarter we'). If it is not in VOICE/<context>, the <tweet>, or <link>, you do not have it.\n"
         "2. NEVER invent statistics, percentages, benchmarks, or experiment results. A "
         "plausible-sounding number is a lie and will be caught in public.\n"
         "3. Having no data is FINE and normal. Reply with a sharp opinion, a concrete "
@@ -211,7 +218,7 @@ def llm_draft(c, pillar, voice, *, model, api_key, examples=(), niche="", room=(
         # never crash the run on one bad LLM response
         return {"angle": f"tie to {pillar or 'your pillars'}", "angle_strength": 0.4, "drafts": []}
 
-def judge_draft(c, draft, voice, *, model, api_key, tracker=None, examples=()):
+def judge_draft(c, draft, voice, *, model, api_key, tracker=None, examples=(), link=""):
     """G3 judge -> scores dict. Returns {} when it must not / cannot run, which
     judge_verdict() treats as a PASS: a judge failure must never destroy a draft."""
     if not api_key or not draft:
@@ -221,7 +228,7 @@ def judge_draft(c, draft, voice, *, model, api_key, tracker=None, examples=()):
             tracker.check("llm_judge", 1)
         except B.BudgetError:
             return {}
-    prompt = G.build_judge_prompt(c.get("text") or "", draft, voice, examples=examples)
+    prompt = G.build_judge_prompt(c.get("text") or "", draft, voice, examples=examples, link=link)
     body = {"model": model, "messages": [{"role": "user", "content": prompt}],
             "response_format": {"type": "json_object"}, "max_tokens": 200}
     try:
@@ -275,6 +282,97 @@ _SM_ANY = "*"
 
 def _sm_q(q):
     return (q or "").strip() or _SM_ANY
+
+
+
+# ---- link grounding --------------------------------------------------------
+
+_LINK_CACHE = {}
+_URL_RE = re.compile(r"https?://[^\s<>\"')]+")
+
+# A tweet is ATTACKER-CONTROLLED text. The box now runs internal services on localhost
+# (supermemory :6767, chorus-memory :8000) and sits in a cloud VPC with a metadata endpoint
+# at 169.254.169.254. Fetching a URL out of a stranger's tweet without this check is a
+# textbook SSRF: anyone could make the box GET its own memory store or its cloud creds and,
+# worse, we would then feed the response into an LLM prompt. Allow public http(s) only.
+_BLOCKED_HOSTS = {"localhost", "127.0.0.1", "0.0.0.0", "::1", "metadata.google.internal"}
+
+
+def _public_url(url):
+    """True only for an http(s) URL that resolves to a public address."""
+    try:
+        import ipaddress, socket
+        from urllib.parse import urlparse
+        u = urlparse(url)
+        if u.scheme not in ("http", "https"):
+            return False
+        host = (u.hostname or "").lower()
+        if not host or host in _BLOCKED_HOSTS:
+            return False
+        # resolve and reject private/loopback/link-local (169.254.169.254 = cloud metadata)
+        for fam, _t, _p, _c, sa in socket.getaddrinfo(host, None):
+            ip = ipaddress.ip_address(sa[0])
+            if (ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+                    or ip.is_multicast or ip.is_unspecified):
+                return False
+        return True
+    except Exception:
+        return False       # fail CLOSED: unresolvable or weird -> do not fetch
+
+
+def link_context(text, *, timeout=6, cap=600):
+    """What is actually BEHIND the link in a tweet, so the drafter can be grounded.
+
+    The drafter only ever saw the tweet's own 140 characters, so when a tweet was just a
+    headline + URL it had nothing to react to and invented specifics -- that is exactly how
+    "our testnet processed 1.2M XRP txs/day" got drafted. This is the cheap fix: fetch the
+    page's title + og:description. No LLM call, no agent harness, no browser. Best-effort:
+    a failure must NEVER block a draft.
+    """
+    if not text:
+        return ""
+    m = _URL_RE.search(text)
+    if not m:
+        return ""
+    url = m.group(0).rstrip(".,)\u2026")
+    if url in _LINK_CACHE:
+        return _LINK_CACHE[url]
+    if not _public_url(url):
+        _LINK_CACHE[url] = ""
+        return ""
+    out = ""
+    try:
+        import urllib.request
+        r = urllib.request.Request(url)
+        r.add_header("user-agent", "Mozilla/5.0 (compatible; chorus/1.0)")
+        with urllib.request.urlopen(r, timeout=timeout) as resp:
+            final = resp.geturl()
+            # t.co shortens everything; the REDIRECT TARGET is what must pass the SSRF check.
+            if not _public_url(final):
+                _LINK_CACHE[url] = ""
+                return ""
+            ctype = (resp.headers.get("content-type") or "").lower()
+            if "html" not in ctype:
+                _LINK_CACHE[url] = ""
+                return ""
+            head = resp.read(150_000).decode("utf-8", "ignore")
+        title = ""
+        mt = re.search(r"<title[^>]*>(.*?)</title>", head, re.I | re.S)
+        if mt:
+            title = re.sub(r"\s+", " ", mt.group(1)).strip()
+        desc = ""
+        for pat in (r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)',
+                    r'<meta[^>]+name=["\']description["\'][^>]+content=["\']([^"\']+)'):
+            md = re.search(pat, head, re.I)
+            if md:
+                desc = re.sub(r"\s+", " ", md.group(1)).strip()
+                break
+        if title or desc:
+            out = (f"the link says — {title}. {desc}").strip()[:cap]
+    except Exception:
+        out = ""           # never block a draft on a dead link
+    _LINK_CACHE[url] = out
+    return out
 
 
 def get_voice(fallback):
@@ -573,10 +671,13 @@ def run(args):
                        f"suggestions, ${tracker.spent} spent of ${tracker.ceiling}")
                 break
             llm_calls += 1
+        # What is actually behind the link, so the drafter has something real to react to
+        # instead of inventing it. Cheap (one GET, cached, SSRF-guarded) and fail-open.
+        link = "" if args.dry_run else link_context(c.get("text") or "")
         d = ({"angle": "dry", "angle_strength": 0.5, "drafts": ["dry"]}
              if args.dry_run else llm_draft(c, pillar, voice, model=model,
                                             api_key=api_key, examples=examples,
-                                            niche=niche))
+                                            niche=niche, link=link))
         if not args.dry_run:
             tracker.record("llm_draft", 1)      # book it as incurred, immediately
             if llm_calls % 10 == 0:             # flush periodically so a crash
@@ -589,20 +690,20 @@ def run(args):
         #  every draft, so it cannot decide routing.)
         scores = {}
         if not args.dry_run and drafts and not args.no_judge:
-            scores = judge_draft(c, drafts[0], voice, model=model, api_key=api_key,
+            scores = judge_draft(c, drafts[0], voice, model=model, api_key=api_key, link=link,
                                  tracker=tracker, examples=examples)
             passed, failed = G.judge_verdict(scores)
             if not passed:
                 print(f"  judge demoted @{c.get('author')} ({','.join(failed)}) - regenerating once")
                 try:
                     tracker.check("llm_draft", 1)
-                    d2 = llm_draft(c, pillar, voice, model=model, api_key=api_key,
+                    d2 = llm_draft(c, pillar, voice, model=model, api_key=api_key, link=link,
                                    examples=examples, niche=niche)
                     tracker.record("llm_draft", 1)
                     if d2.get("drafts"):
                         drafts = d2["drafts"]
                         astr = d2.get("angle_strength", astr)
-                        s2 = judge_draft(c, drafts[0], voice, model=model,
+                        s2 = judge_draft(c, drafts[0], voice, model=model, link=link,
                                          api_key=api_key, tracker=tracker,
                                          examples=examples)
                         if s2:
